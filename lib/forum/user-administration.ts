@@ -33,7 +33,8 @@ export async function listManagedUsers(actor: CommunityViewer) {
                 users.email_verified_at, users.created_at,
                 (SELECT COUNT(*) FROM topics WHERE author_id = users.id) +
                 (SELECT COUNT(*) FROM posts WHERE author_id = users.id) +
-                (SELECT COUNT(*) FROM content_records WHERE author_id = users.id)
+                (SELECT COUNT(*) FROM content_records WHERE author_id = users.id) +
+                (SELECT COUNT(*) FROM partner_programs WHERE submitted_by_id = users.id)
                   AS authored_count
          FROM users
          WHERE users.password_hash != 'disabled'
@@ -185,11 +186,20 @@ export async function deleteManagedUser(
         (SELECT COUNT(*) FROM posts WHERE author_id = ?) +
         (SELECT COUNT(*) FROM content_records WHERE author_id = ?) +
         (SELECT COUNT(*) FROM community_groups WHERE owner_id = ?) +
+        (SELECT COUNT(*) FROM partner_programs WHERE submitted_by_id = ?) +
         (SELECT COUNT(*) FROM moderation_reports WHERE reporter_id = ?) +
         (SELECT COUNT(*) FROM moderation_actions WHERE actor_user_id = ?)
           AS count`,
     )
-    .bind(target.id, target.id, target.id, target.id, target.id, target.id)
+    .bind(
+      target.id,
+      target.id,
+      target.id,
+      target.id,
+      target.id,
+      target.id,
+      target.id,
+    )
     .first<{ count: number }>();
   if ((activity?.count || 0) > 0)
     return { ok: false as const, code: 'HAS_ACTIVITY' as const };

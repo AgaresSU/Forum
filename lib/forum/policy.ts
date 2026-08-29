@@ -9,6 +9,8 @@ export const communityEventTypes = [
   'topic.reported',
   'post.created',
   'content.published',
+  'partner_program.created',
+  'partner_program.reviewed',
   'group.membership_changed',
   'subscription.changed',
 ] as const;
@@ -210,6 +212,49 @@ export const userRoleChangeSchema = z.object({
 export const userDeleteSchema = z.object({
   note: z.string().trim().min(10).max(500),
 });
+
+const secureExternalUrl = z
+  .url('Укажите корректный URL.')
+  .max(2_000)
+  .refine((value) => new URL(value).protocol === 'https:', {
+    message: 'Разрешены только HTTPS-ссылки.',
+  });
+
+export const partnerProgramCreateSchema = z.object({
+  name: z.string().trim().min(3).max(100),
+  category: z.enum([
+    'hosting',
+    'devtools',
+    'education',
+    'saas',
+    'finance',
+    'other',
+  ]),
+  description: z.string().trim().min(40).max(1_500),
+  websiteUrl: secureExternalUrl,
+  referralUrl: secureExternalUrl,
+  rewardSummary: z.string().trim().min(10).max(300),
+  payoutTerms: z.string().trim().min(20).max(500),
+  commercialDisclosure: commercialDisclosureSchema,
+});
+
+export const partnerProgramReviewSchema = z
+  .object({
+    status: z.enum(['published', 'paused', 'rejected']),
+    note: z.string().trim().max(500).optional(),
+  })
+  .superRefine((value, context) => {
+    if (
+      value.status === 'rejected' &&
+      (!value.note || value.note.length < 10)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['note'],
+        message: 'Для отклонения добавьте комментарий не короче 10 символов.',
+      });
+    }
+  });
 
 export const publicationPolicy = {
   commercialDisclosureRequired: true,

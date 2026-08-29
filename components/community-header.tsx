@@ -14,6 +14,7 @@ const navigation = [
   { href: '/forum', label: 'Форум', key: 'forum' },
   { href: '/journal', label: 'Журнал', key: 'journal' },
   { href: '/library', label: 'База знаний', key: 'library' },
+  { href: '/partners', label: 'Партнёрки', key: 'partners' },
   { href: '/groups', label: 'Группы', key: 'groups' },
   {
     href: '/editor',

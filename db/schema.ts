@@ -333,6 +333,44 @@ export const userAdministrationAudit = sqliteTable(
   ],
 );
 
+export const partnerPrograms = sqliteTable(
+  'partner_programs',
+  {
+    id: text('id').primaryKey(),
+    submittedById: text('submitted_by_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    reviewedById: text('reviewed_by_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    slug: text('slug').notNull(),
+    name: text('name').notNull(),
+    category: text('category').notNull(),
+    description: text('description').notNull(),
+    websiteUrl: text('website_url').notNull(),
+    referralUrl: text('referral_url').notNull(),
+    rewardSummary: text('reward_summary').notNull(),
+    payoutTerms: text('payout_terms').notNull(),
+    commercialDisclosure: text('commercial_disclosure').notNull(),
+    status: text('status').notNull().default('pending'),
+    moderationNote: text('moderation_note'),
+    reviewedAt: integer('reviewed_at'),
+    createdAt: integer('created_at').notNull(),
+    updatedAt: integer('updated_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_partner_programs_slug').on(table.slug),
+    index('idx_partner_programs_status_updated').on(
+      table.status,
+      table.updatedAt,
+    ),
+    index('idx_partner_programs_submitter_created').on(
+      table.submittedById,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const communityGroups = sqliteTable(
   'community_groups',
   {
