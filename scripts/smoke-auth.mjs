@@ -9,7 +9,11 @@ const protectedPages = [
   '/forum/topic/go-connection-leak',
   '/forum/topic/affiliate-checklist',
   '/journal',
+  '/journal/modular-monolith-practical-choice',
+  '/journal/observability-without-platform-team',
   '/library',
+  '/library/quality-manual-standard',
+  '/library/affiliate-program-due-diligence',
   '/groups',
   '/moderation',
   '/notifications',
@@ -60,6 +64,19 @@ async function expectProtectedPage(path) {
     throw new Error(`${path}: community shell was not rendered`);
 }
 
+async function expectPageContent(path, expected, forbidden) {
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { cookie: primarySession.cookie },
+  });
+  if (!response.ok)
+    throw new Error(`${path}: expected 200, received ${response.status}`);
+  const html = await response.text();
+  if (!html.includes(expected))
+    throw new Error(`${path}: expected editorial content was not rendered`);
+  if (forbidden && html.includes(forbidden))
+    throw new Error(`${path}: protected editorial body was disclosed`);
+}
+
 async function expectJsonStatus(path, body, expectedStatus) {
   const response = await fetch(`${baseUrl}${path}`, {
     method: 'POST',
@@ -95,6 +112,20 @@ const registration = await request('/api/auth/register', {
 await request('/api/auth/verify-email', { email, code: registration.devCode });
 await request('/api/auth/me');
 for (const path of protectedPages) await expectProtectedPage(path);
+await expectPageContent(
+  '/journal/modular-monolith-practical-choice',
+  'Модульный монолит полезен',
+);
+await expectPageContent(
+  '/journal/observability-without-platform-team',
+  'Материал доступен участникам PRO',
+  'Небольшой команде не нужен полный каталог',
+);
+await expectPageContent(
+  '/library/quality-manual-standard',
+  'Сначала сформулируйте результат',
+);
+await expectPageContent('/library?q=Go', 'Диагностика утечки соединений в Go');
 
 const topic = await request('/api/forum/topics', {
   forumSlug: 'development',
@@ -240,5 +271,8 @@ process.stdout.write(
     premoderation: true,
     moderationRoleGuard: true,
     notifications: true,
+    editorialContent: true,
+    proContentGuard: true,
+    librarySearch: true,
   })}\n`,
 );

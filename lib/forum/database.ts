@@ -2,6 +2,7 @@ import { env } from 'cloudflare:workers';
 
 import { ensureAuthSchema } from '@/lib/auth/database';
 import { forumSections } from '@/lib/forum/catalog';
+import { seedEditorialRecords } from '@/lib/forum/editorial-content';
 import type { CommunityEventType } from '@/lib/forum/policy';
 import { findTopic, getForumTopics } from '@/lib/forum/sample-content';
 
@@ -415,6 +416,70 @@ async function seedCuratedTopics() {
   await batchInChunks(database, [...authorStatements, ...contentStatements]);
 }
 
+async function seedEditorialContent() {
+  const database = getDatabase();
+  const seeded = await database
+    .prepare(
+      "SELECT COUNT(*) AS count FROM content_records WHERE id LIKE 'seed-content:%'",
+    )
+    .first<{ count: number }>();
+  if ((seeded?.count || 0) >= seedEditorialRecords.length) return;
+
+  const now = Math.floor(Date.now() / 1000);
+  const authors = new Set(seedEditorialRecords.map((record) => record.author));
+  const authorStatements = [...authors].map((author) => {
+    const authorId = `content-user:${stableContentId(author)}`;
+    return database
+      .prepare(
+        `INSERT OR IGNORE INTO users (
+          id, email, username, password_hash, role, email_verified_at, created_at, updated_at
+        ) VALUES (?, ?, ?, 'disabled', ?, ?, ?, ?)`,
+      )
+      .bind(
+        authorId,
+        `content-${stableContentId(author)}@osnova.local`,
+        author,
+        author === 'Редакция' ? 'moderator' : 'author',
+        now,
+        now,
+        now,
+      );
+  });
+  const contentStatements = seedEditorialRecords.map((record) => {
+    const publishedAt = now - record.publishedOffsetSeconds;
+    return database
+      .prepare(
+        `INSERT OR IGNORE INTO content_records (
+          id, author_id, discussion_topic_id, content_type, slug, title,
+          summary, body, status, access_level, revision, is_commercial,
+          commercial_disclosure, published_at, created_at, updated_at
+        ) VALUES (
+          ?, ?, (SELECT id FROM topics WHERE slug = ? LIMIT 1), ?, ?, ?,
+          ?, ?, 'published', ?, ?, ?, ?, ?, ?, ?
+        )`,
+      )
+      .bind(
+        `seed-content:${record.slug}`,
+        `content-user:${stableContentId(record.author)}`,
+        record.discussionSlug,
+        record.contentType,
+        record.slug,
+        record.title,
+        record.summary,
+        record.body,
+        record.accessLevel,
+        record.revision,
+        record.isCommercial ? 1 : 0,
+        record.commercialDisclosure || null,
+        publishedAt,
+        publishedAt,
+        publishedAt,
+      );
+  });
+
+  await batchInChunks(database, [...authorStatements, ...contentStatements]);
+}
+
 export function ensureCommunitySchema() {
   communitySchemaReady ??= (async () => {
     await ensureAuthSchema();
@@ -425,6 +490,7 @@ export function ensureCommunitySchema() {
     await ensureCommunityColumns();
     await seedForumNodes();
     await seedCuratedTopics();
+    await seedEditorialContent();
     await database.prepare('PRAGMA optimize').run();
   })();
   return communitySchemaReady;
