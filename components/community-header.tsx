@@ -1,6 +1,8 @@
 import Link from 'next/link';
 import { Bell, Code2, Search, ShieldCheck } from 'lucide-react';
 
+import { getUnreadNotificationCount } from '@/lib/forum/notifications';
+
 const navigation = [
   { href: '/forum', label: 'Форум', key: 'forum' },
   { href: '/journal', label: 'Журнал', key: 'journal' },
@@ -14,15 +16,18 @@ const navigation = [
   },
 ] as const;
 
-export function CommunityHeader({
+export async function CommunityHeader({
   username,
+  userId,
   role = 'member',
   active,
 }: {
   username: string;
+  userId?: string;
   role?: string;
   active: (typeof navigation)[number]['key'];
 }) {
+  const unreadCount = userId ? await getUnreadNotificationCount(userId) : 0;
   const visibleNavigation = navigation.filter(
     (item) =>
       !('moderation' in item) || role === 'moderator' || role === 'admin',
@@ -77,13 +82,18 @@ export function CommunityHeader({
         >
           <Search className="size-4" /> Поиск по сообществу
         </Link>
-        <button
-          type="button"
-          className="grid size-9 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
+        <Link
+          href="/notifications"
+          className="relative grid size-9 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
           aria-label="Уведомления"
         >
           <Bell className="size-4" />
-        </button>
+          {unreadCount > 0 && (
+            <span className="absolute right-0 top-0 grid min-w-4 place-items-center rounded-full bg-accent-strong px-1 text-[9px] font-bold leading-4 text-white">
+              {unreadCount > 99 ? '99+' : unreadCount}
+            </span>
+          )}
+        </Link>
         <Link
           href="/account/security"
           aria-label="Личный кабинет"

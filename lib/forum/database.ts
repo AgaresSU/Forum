@@ -27,6 +27,7 @@ const communitySchemaStatements = [
     id TEXT PRIMARY KEY,
     forum_id TEXT NOT NULL REFERENCES forum_nodes(id) ON DELETE CASCADE,
     author_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    assigned_to_id TEXT REFERENCES users(id) ON DELETE SET NULL,
     slug TEXT NOT NULL,
     title TEXT NOT NULL,
     excerpt TEXT NOT NULL DEFAULT '',
@@ -36,6 +37,9 @@ const communitySchemaStatements = [
     is_locked INTEGER NOT NULL DEFAULT 0,
     is_commercial INTEGER NOT NULL DEFAULT 0,
     commercial_disclosure TEXT,
+    moderation_note TEXT,
+    moderation_decided_at INTEGER,
+    resubmission_count INTEGER NOT NULL DEFAULT 0,
     view_count INTEGER NOT NULL DEFAULT 0,
     reply_count INTEGER NOT NULL DEFAULT 0,
     last_post_at INTEGER NOT NULL,
@@ -119,6 +123,20 @@ const communitySchemaStatements = [
     PRIMARY KEY(user_id, topic_id)
   )`,
   'CREATE INDEX IF NOT EXISTS idx_topic_subscriptions_topic ON topic_subscriptions(topic_id)',
+  `CREATE TABLE IF NOT EXISTS notifications (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    notification_type TEXT NOT NULL,
+    entity_type TEXT NOT NULL,
+    entity_id TEXT NOT NULL,
+    title TEXT NOT NULL,
+    body TEXT NOT NULL DEFAULT '',
+    href TEXT NOT NULL,
+    is_read INTEGER NOT NULL DEFAULT 0,
+    created_at INTEGER NOT NULL
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_notifications_user_read_created ON notifications(user_id, is_read, created_at)',
   `CREATE TABLE IF NOT EXISTS moderation_reports (
     id TEXT PRIMARY KEY,
     reporter_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -134,6 +152,18 @@ const communitySchemaStatements = [
   )`,
   'CREATE INDEX IF NOT EXISTS idx_moderation_reports_status_created ON moderation_reports(status, created_at)',
   'CREATE INDEX IF NOT EXISTS idx_moderation_reports_target ON moderation_reports(target_type, target_id)',
+  `CREATE TABLE IF NOT EXISTS moderation_actions (
+    id TEXT PRIMARY KEY,
+    actor_user_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    topic_id TEXT REFERENCES topics(id) ON DELETE CASCADE,
+    report_id TEXT REFERENCES moderation_reports(id) ON DELETE CASCADE,
+    action TEXT NOT NULL,
+    note TEXT NOT NULL DEFAULT '',
+    metadata_json TEXT,
+    created_at INTEGER NOT NULL
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_moderation_actions_topic_created ON moderation_actions(topic_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_moderation_actions_report_created ON moderation_actions(report_id, created_at)',
   `CREATE TABLE IF NOT EXISTS community_events (
     id TEXT PRIMARY KEY,
     actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
@@ -152,6 +182,42 @@ let communitySchemaReady: Promise<void> | undefined;
 
 function getDatabase() {
   return (env as unknown as { DB: D1Database }).DB;
+}
+
+async function ensureCommunityColumns() {
+  const database = getDatabase();
+  const columns = await database
+    .prepare('PRAGMA table_info(topics)')
+    .all<{ name: string }>();
+  const existing = new Set(columns.results.map((column) => column.name));
+  const statements: D1PreparedStatement[] = [];
+  if (!existing.has('assigned_to_id')) {
+    statements.push(
+      database.prepare(
+        'ALTER TABLE topics ADD COLUMN assigned_to_id TEXT REFERENCES users(id) ON DELETE SET NULL',
+      ),
+    );
+  }
+  if (!existing.has('moderation_note')) {
+    statements.push(
+      database.prepare('ALTER TABLE topics ADD COLUMN moderation_note TEXT'),
+    );
+  }
+  if (!existing.has('moderation_decided_at')) {
+    statements.push(
+      database.prepare(
+        'ALTER TABLE topics ADD COLUMN moderation_decided_at INTEGER',
+      ),
+    );
+  }
+  if (!existing.has('resubmission_count')) {
+    statements.push(
+      database.prepare(
+        'ALTER TABLE topics ADD COLUMN resubmission_count INTEGER NOT NULL DEFAULT 0',
+      ),
+    );
+  }
+  if (statements.length) await database.batch(statements);
 }
 
 async function seedForumNodes() {
@@ -356,6 +422,7 @@ export function ensureCommunitySchema() {
     await database.batch(
       communitySchemaStatements.map((statement) => database.prepare(statement)),
     );
+    await ensureCommunityColumns();
     await seedForumNodes();
     await seedCuratedTopics();
     await database.prepare('PRAGMA optimize').run();

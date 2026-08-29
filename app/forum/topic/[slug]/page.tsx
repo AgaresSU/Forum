@@ -12,6 +12,7 @@ import {
 import { CommunityHeader } from '@/components/community-header';
 import {
   ReplyComposer,
+  ResubmitEditor,
   TopicActions,
 } from '@/components/forum/topic-interactions';
 import { buttonVariants } from '@/components/ui/button';
@@ -25,6 +26,15 @@ export const dynamic = 'force-dynamic';
 const statusLabels: Record<string, string> = {
   pending: 'На модерации',
   rejected: 'Отклонено',
+  blocked: 'Заблокировано',
+};
+
+const actionLabels: Record<string, string> = {
+  claimed: 'Взято в работу',
+  approve: 'Опубликовано',
+  reject: 'Возвращено на доработку',
+  block: 'Заблокировано',
+  resubmitted: 'Повторно отправлено',
 };
 
 export default async function TopicPage({
@@ -46,6 +56,7 @@ export default async function TopicPage({
       <div className="min-h-screen bg-background text-foreground">
         <CommunityHeader
           username={user.username}
+          userId={user.id}
           role={user.role}
           active="forum"
         />
@@ -100,12 +111,16 @@ export default async function TopicPage({
       ? 'Ответы откроются после публикации темы модератором.'
       : topic.status === 'rejected'
         ? 'Отклонённая тема недоступна для обсуждения.'
-        : undefined;
+        : topic.status === 'blocked'
+          ? 'Тема заблокирована модератором.'
+          : undefined;
+  const isAuthor = topic.authorId === user.id;
 
   return (
     <div className="min-h-screen bg-background text-foreground">
       <CommunityHeader
         username={user.username}
+        userId={user.id}
         role={user.role}
         active="forum"
       />
@@ -176,7 +191,31 @@ export default async function TopicPage({
               <div className="mb-4 rounded-2xl border border-violet-ink/15 bg-violet-soft p-4 text-sm text-violet-ink">
                 Тема сохранена и видна автору. После проверки модератор
                 опубликует её в разделе или отклонит с последующей доработкой.
+                {topic.assignedTo && (
+                  <span className="mt-2 block font-semibold">
+                    Ответственный: {topic.assignedTo}
+                  </span>
+                )}
               </div>
+            )}
+            {(topic.status === 'rejected' || topic.status === 'blocked') &&
+              topic.moderationNote && (
+                <div className="mb-4 rounded-2xl border border-destructive/20 bg-destructive/5 p-4 text-sm text-destructive">
+                  <strong className="block font-heading">
+                    Комментарий модератора
+                  </strong>
+                  <span className="mt-2 block leading-6">
+                    {topic.moderationNote}
+                  </span>
+                </div>
+              )}
+            {topic.status === 'rejected' && isAuthor && (
+              <ResubmitEditor
+                slug={topic.slug}
+                initialBody={topic.posts[0]?.body.join('\n\n') || ''}
+                isCommercial={topic.commercial}
+                initialDisclosure={topic.commercialDisclosure || ''}
+              />
             )}
             {topic.commercial && (
               <div className="mb-4 flex gap-3 rounded-2xl border border-amber-ink/15 bg-amber-soft p-4 text-amber-ink">
@@ -304,6 +343,33 @@ export default async function TopicPage({
                 </div>
               </dl>
             </section>
+            {topic.moderationHistory.length > 0 && (
+              <section className="rounded-2xl border border-border bg-card p-5">
+                <p className="text-[10px] font-bold uppercase tracking-[0.14em] text-muted-foreground">
+                  История модерации
+                </p>
+                <ol className="mt-4 space-y-4">
+                  {topic.moderationHistory.map((action, index) => (
+                    <li
+                      key={`${action.action}-${action.created_at}-${index}`}
+                      className="border-l-2 border-border pl-3 text-xs"
+                    >
+                      <strong className="block">
+                        {actionLabels[action.action] || action.action}
+                      </strong>
+                      <span className="mt-1 block text-muted-foreground">
+                        {action.actor} · {action.created}
+                      </span>
+                      {action.note && (
+                        <span className="mt-1 block leading-5 text-muted-foreground">
+                          {action.note}
+                        </span>
+                      )}
+                    </li>
+                  ))}
+                </ol>
+              </section>
+            )}
             <section className="rounded-2xl border border-border bg-card p-5">
               <div className="flex items-center gap-2">
                 <ShieldCheck className="size-4 text-emerald-ink" />

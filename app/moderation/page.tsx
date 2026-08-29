@@ -18,6 +18,7 @@ export default async function ModerationPage() {
       <div className="min-h-screen bg-background text-foreground">
         <CommunityHeader
           username={user.username}
+          userId={user.id}
           role={user.role}
           active="moderation"
         />
@@ -45,6 +46,7 @@ export default async function ModerationPage() {
     <div className="min-h-screen bg-background text-foreground">
       <CommunityHeader
         username={user.username}
+        userId={user.id}
         role={user.role}
         active="moderation"
       />
@@ -69,6 +71,9 @@ export default async function ModerationPage() {
         <ModerationQueue
           initialTopics={queue.topics}
           initialReports={queue.reports}
+          initialHistory={queue.history}
+          moderatorName={user.username}
+          isAdmin={user.role === 'admin'}
         />
       </main>
     </div>

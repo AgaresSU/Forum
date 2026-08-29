@@ -1,7 +1,7 @@
 import * as OTPAuth from 'otpauth';
 
 const baseUrl = process.env.AUTH_SMOKE_BASE_URL || 'http://127.0.0.1:3000';
-let cookie = '';
+const primarySession = { cookie: '' };
 const protectedPages = [
   '/forum',
   '/forum/section/development',
@@ -12,23 +12,28 @@ const protectedPages = [
   '/library',
   '/groups',
   '/moderation',
+  '/notifications',
 ];
 
-async function request(path, body) {
+async function requestWithSession(session, path, body) {
   const response = await fetch(`${baseUrl}${path}`, {
     method: body === undefined ? 'GET' : 'POST',
     headers: {
       ...(body === undefined ? {} : { 'content-type': 'application/json' }),
-      ...(cookie ? { cookie } : {}),
+      ...(session.cookie ? { cookie: session.cookie } : {}),
     },
     body: body === undefined ? undefined : JSON.stringify(body),
   });
   const setCookie = response.headers.get('set-cookie');
-  if (setCookie) cookie = setCookie.split(';', 1)[0];
+  if (setCookie) session.cookie = setCookie.split(';', 1)[0];
   const result = await response.json();
   if (!response.ok || !result.ok)
     throw new Error(`${path}: ${result.message || response.status}`);
   return result;
+}
+
+async function request(path, body) {
+  return requestWithSession(primarySession, path, body);
 }
 
 async function expectAnonymousRedirect(path) {
@@ -45,7 +50,9 @@ async function expectAnonymousRedirect(path) {
 }
 
 async function expectProtectedPage(path) {
-  const response = await fetch(`${baseUrl}${path}`, { headers: { cookie } });
+  const response = await fetch(`${baseUrl}${path}`, {
+    headers: { cookie: primarySession.cookie },
+  });
   if (!response.ok)
     throw new Error(`${path}: expected 200, received ${response.status}`);
   const html = await response.text();
@@ -56,7 +63,10 @@ async function expectProtectedPage(path) {
 async function expectJsonStatus(path, body, expectedStatus) {
   const response = await fetch(`${baseUrl}${path}`, {
     method: 'POST',
-    headers: { 'content-type': 'application/json', cookie },
+    headers: {
+      'content-type': 'application/json',
+      cookie: primarySession.cookie,
+    },
     body: JSON.stringify(body),
   });
   const result = await response.json();
@@ -98,12 +108,18 @@ await expectProtectedPage(`/forum/topic/${encodeURIComponent(topic.slug)}`);
 await request(`/api/forum/topics/${encodeURIComponent(topic.slug)}/posts`, {
   body: 'Проверочный ответ подтверждает запись сообщения и обновление счётчика активности темы.',
 });
-const topicSubscription = await request('/api/forum/subscriptions', {
+const disabledTopicSubscription = await request('/api/forum/subscriptions', {
   targetType: 'topic',
   slug: topic.slug,
 });
-if (!topicSubscription.subscribed)
-  throw new Error('Topic subscription was not enabled');
+if (disabledTopicSubscription.subscribed)
+  throw new Error('Topic author must be subscribed automatically');
+const enabledTopicSubscription = await request('/api/forum/subscriptions', {
+  targetType: 'topic',
+  slug: topic.slug,
+});
+if (!enabledTopicSubscription.subscribed)
+  throw new Error('Topic subscription was not restored');
 await request('/api/forum/subscriptions', {
   targetType: 'forum',
   slug: 'development',
@@ -134,6 +150,38 @@ await expectJsonStatus(
   },
   403,
 );
+
+const replySession = { cookie: '' };
+const replyEmail = `reply+${suffix}@local.test`;
+const replyUsername = `reply_${suffix}`;
+const replyRegistration = await requestWithSession(
+  replySession,
+  '/api/auth/register',
+  {
+    email: replyEmail,
+    username: replyUsername,
+    password,
+    passwordConfirmation: password,
+  },
+);
+await requestWithSession(replySession, '/api/auth/verify-email', {
+  email: replyEmail,
+  code: replyRegistration.devCode,
+});
+await requestWithSession(
+  replySession,
+  `/api/forum/topics/${encodeURIComponent(topic.slug)}/posts`,
+  {
+    body: `@${username}, проверяем адресное уведомление об упоминании в новой системе.`,
+  },
+);
+const notificationPage = await fetch(`${baseUrl}/notifications`, {
+  headers: { cookie: primarySession.cookie },
+});
+const notificationHtml = await notificationPage.text();
+if (!notificationPage.ok || !notificationHtml.includes('Вас упомянули'))
+  throw new Error('Mention notification was not rendered for the recipient');
+await request('/api/notifications/read-all', {});
 await expectJsonStatus(
   `/api/moderation/topics/${pendingTopic.topicId}`,
   { action: 'approve' },
@@ -191,5 +239,6 @@ process.stdout.write(
     reports: true,
     premoderation: true,
     moderationRoleGuard: true,
+    notifications: true,
   })}\n`,
 );

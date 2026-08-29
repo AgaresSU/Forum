@@ -5,6 +5,7 @@ export const communityEventTypes = [
   'user.role_changed',
   'topic.created',
   'topic.published',
+  'topic.resubmitted',
   'topic.reported',
   'post.created',
   'content.published',
@@ -98,8 +99,34 @@ export const subscriptionSchema = z.object({
   slug: z.string().trim().min(1).max(160),
 });
 
-export const moderationActionSchema = z.object({
-  action: z.enum(['approve', 'reject', 'resolve', 'dismiss']),
+export const moderationActionSchema = z
+  .object({
+    action: z.enum([
+      'approve',
+      'reject',
+      'block',
+      'claim',
+      'resolve',
+      'dismiss',
+    ]),
+    note: z.string().trim().max(2_000).optional(),
+  })
+  .superRefine((value, context) => {
+    if (
+      (value.action === 'reject' || value.action === 'block') &&
+      (!value.note || value.note.length < 10)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['note'],
+        message: 'Для отклонения или блокировки добавьте комментарий.',
+      });
+    }
+  });
+
+export const topicResubmissionSchema = z.object({
+  body: z.string().trim().min(40).max(50_000),
+  commercialDisclosure: z.string().trim().max(500).optional(),
 });
 
 export const publicationPolicy = {

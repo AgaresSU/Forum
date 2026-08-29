@@ -22,7 +22,7 @@ export default async function JournalPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <CommunityHeader username={user.username} role={user.role} active="journal" />
+      <CommunityHeader username={user.username} userId={user.id} role={user.role} active="journal" />
       <main className="mx-auto max-w-[1280px] px-4 py-7 sm:px-6 lg:px-8">
         <header className="mb-7 max-w-3xl">
           <p className="text-[11px] font-bold uppercase tracking-[0.15em] text-accent-strong">Редакция и авторы сообщества</p>

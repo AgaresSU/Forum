@@ -145,11 +145,13 @@ function ForumRow({ forum }: { forum: ForumNode }) {
 export function ForumHome({
   username,
   role,
+  unreadCount = 0,
   initialCompose = false,
   initialForum = 'development',
 }: {
   username: string;
   role: string;
+  unreadCount?: number;
   initialCompose?: boolean;
   initialForum?: string;
 }) {
@@ -275,15 +277,18 @@ export function ForumHome({
             />
           </label>
 
-          <Button
-            variant="ghost"
-            size="icon"
+          <Link
+            href="/notifications"
+            className="relative grid size-8 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground"
             aria-label="Уведомления"
-            className="relative"
           >
-            <Bell />
-            <span className="absolute right-1.5 top-1.5 size-1.5 rounded-full bg-accent-strong ring-2 ring-background" />
-          </Button>
+            <Bell className="size-4" />
+            {unreadCount > 0 && (
+              <span className="absolute -right-1 -top-1 grid min-w-4 place-items-center rounded-full bg-accent-strong px-1 text-[9px] font-bold leading-4 text-white">
+                {unreadCount > 99 ? '99+' : unreadCount}
+              </span>
+            )}
+          </Link>
           <Button
             className="hidden sm:inline-flex"
             onClick={() => setNewTopicOpen(true)}

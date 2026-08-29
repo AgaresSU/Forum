@@ -29,6 +29,13 @@
       "when": 1788013391670,
       "tag": "0003_tidy_wrecking_crew",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "6",
+      "when": 1788017759642,
+      "tag": "0004_third_wolfsbane",
+      "breakpoints": true
     }
   ]
 }

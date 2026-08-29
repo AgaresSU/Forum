@@ -1,6 +1,7 @@
 import { getDatabase } from '@/lib/auth/database';
 import { canAccessRole, canModerate, roleLabel } from '@/lib/forum/access';
 import { ensureCommunitySchema } from '@/lib/forum/database';
+import { notificationStatements } from '@/lib/forum/notifications';
 
 export type CommunityViewer = {
   id: string;
@@ -19,6 +20,8 @@ type TopicRow = {
   forum_id: string;
   forum_slug: string;
   author_id: string;
+  assigned_to_id: string | null;
+  assigned_to: string | null;
   slug: string;
   title: string;
   excerpt: string;
@@ -28,6 +31,9 @@ type TopicRow = {
   is_locked: number;
   is_commercial: number;
   commercial_disclosure: string | null;
+  moderation_note: string | null;
+  moderation_decided_at: number | null;
+  resubmission_count: number;
   view_count: number;
   reply_count: number;
   last_post_at: number;
@@ -119,10 +125,12 @@ async function getTopicRow(slug: string) {
   return getDatabase()
     .prepare(
       `SELECT topics.*, forum_nodes.slug AS forum_slug,
-              users.username AS author, users.role AS author_role
+              users.username AS author, users.role AS author_role,
+              assigned.username AS assigned_to
        FROM topics
        JOIN forum_nodes ON forum_nodes.id = topics.forum_id
        JOIN users ON users.id = topics.author_id
+       LEFT JOIN users AS assigned ON assigned.id = topics.assigned_to_id
        WHERE topics.slug = ?`,
     )
     .bind(slug)
@@ -162,6 +170,17 @@ export async function createTopic(
     forum.requires_moderation && !canModerate(viewer.role)
       ? 'pending'
       : 'published';
+  const recipientRows =
+    status === 'published'
+      ? await database
+          .prepare(
+            'SELECT user_id AS id FROM forum_subscriptions WHERE forum_id = ?',
+          )
+          .bind(forum.id)
+          .all<{ id: string }>()
+      : await database
+          .prepare("SELECT id FROM users WHERE role IN ('moderator', 'admin')")
+          .all<{ id: string }>();
   const statements = [
     database
       .prepare(
@@ -194,6 +213,13 @@ export async function createTopic(
       .bind(postId, topicId, viewer.id, input.body, status, now, now),
     database
       .prepare(
+        `INSERT OR IGNORE INTO topic_subscriptions (
+          user_id, topic_id, notification_mode, created_at
+        ) VALUES (?, ?, 'in_app', ?)`,
+      )
+      .bind(viewer.id, topicId, now),
+    database
+      .prepare(
         `INSERT INTO community_events (
           id, actor_user_id, event_type, entity_type, entity_id, payload_json, status, created_at
         ) VALUES (?, ?, ?, 'topic', ?, ?, 'pending', ?)`,
@@ -207,6 +233,29 @@ export async function createTopic(
         now,
       ),
   ];
+  statements.push(
+    ...notificationStatements(
+      database,
+      recipientRows.results.map((recipient) => recipient.id),
+      viewer.id,
+      {
+        notificationType:
+          status === 'published' ? 'forum_topic' : 'moderation_pending',
+        entityType: 'topic',
+        entityId: topicId,
+        title:
+          status === 'published'
+            ? `Новая тема: ${input.title}`
+            : `Тема ожидает проверки: ${input.title}`,
+        body:
+          status === 'published'
+            ? `В подписанном разделе «${input.forumSlug}» появилась новая тема.`
+            : 'Публикация добавлена в очередь премодерации.',
+        href: status === 'published' ? `/forum/topic/${slug}` : '/moderation',
+      },
+      now,
+    ),
+  );
   if (status === 'published') {
     statements.push(
       database
@@ -298,6 +347,26 @@ export async function getTopicView(slug: string, viewer: CommunityViewer) {
     )
     .bind(topic.id)
     .first<{ count: number }>();
+  const moderationHistory =
+    topic.author_id === viewer.id || canModerate(viewer.role)
+      ? await getDatabase()
+          .prepare(
+            `SELECT moderation_actions.action, moderation_actions.note,
+                    moderation_actions.created_at, users.username AS actor
+             FROM moderation_actions
+             JOIN users ON users.id = moderation_actions.actor_user_id
+             WHERE moderation_actions.topic_id = ?
+             ORDER BY moderation_actions.created_at DESC
+             LIMIT 50`,
+          )
+          .bind(topic.id)
+          .all<{
+            action: string;
+            note: string;
+            created_at: number;
+            actor: string;
+          }>()
+      : null;
 
   return {
     id: topic.id,
@@ -315,6 +384,13 @@ export async function getTopicView(slug: string, viewer: CommunityViewer) {
     locked: Boolean(topic.is_locked),
     commercial: Boolean(topic.is_commercial),
     commercialDisclosure: topic.commercial_disclosure,
+    moderationNote:
+      topic.author_id === viewer.id || canModerate(viewer.role)
+        ? topic.moderation_note
+        : null,
+    moderationDecidedAt: topic.moderation_decided_at,
+    resubmissionCount: topic.resubmission_count,
+    assignedTo: topic.assigned_to,
     access:
       topic.access_level === 'pro' ? ('pro' as const) : ('member' as const),
     status: topic.status,
@@ -330,6 +406,11 @@ export async function getTopicView(slug: string, viewer: CommunityViewer) {
       reactions: 0,
       status: post.status,
     })),
+    moderationHistory:
+      moderationHistory?.results.map((action) => ({
+        ...action,
+        created: formatRelativeTime(action.created_at),
+      })) || [],
   };
 }
 
@@ -350,7 +431,36 @@ export async function addTopicPost(
   const database = getDatabase();
   const postId = crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
-  await database.batch([
+  const subscriberRows = await database
+    .prepare(
+      `SELECT user_id AS id FROM topic_subscriptions WHERE topic_id = ?
+       UNION
+       SELECT ? AS id
+       UNION
+       SELECT user_id AS id FROM forum_subscriptions WHERE forum_id = ?`,
+    )
+    .bind(topic.id, topic.author_id, topic.forum_id)
+    .all<{ id: string }>();
+  const mentionNames = [
+    ...new Set(
+      [...body.matchAll(/@([a-z0-9_]{3,24})/giu)].map((match) =>
+        match[1].toLowerCase(),
+      ),
+    ),
+  ];
+  const mentionedRows = mentionNames.length
+    ? await database
+        .prepare(
+          `SELECT id FROM users WHERE username IN (${mentionNames.map(() => '?').join(', ')})`,
+        )
+        .bind(...mentionNames)
+        .all<{ id: string }>()
+    : { results: [] as { id: string }[] };
+  const mentionedIds = new Set(mentionedRows.results.map((user) => user.id));
+  const replyRecipients = subscriberRows.results
+    .map((recipient) => recipient.id)
+    .filter((id) => !mentionedIds.has(id));
+  const statements = [
     database
       .prepare(
         `INSERT INTO posts (
@@ -378,7 +488,38 @@ export async function addTopicPost(
         JSON.stringify({ topicId: topic.id }),
         now,
       ),
-  ]);
+  ];
+  statements.push(
+    ...notificationStatements(
+      database,
+      replyRecipients,
+      viewer.id,
+      {
+        notificationType: 'topic_reply',
+        entityType: 'post',
+        entityId: postId,
+        title: `Новый ответ: ${topic.title}`,
+        body: excerptFromBody(body),
+        href: `/forum/topic/${topic.slug}#post-${postId}`,
+      },
+      now,
+    ),
+    ...notificationStatements(
+      database,
+      mentionedIds,
+      viewer.id,
+      {
+        notificationType: 'mention',
+        entityType: 'post',
+        entityId: postId,
+        title: `Вас упомянули в теме «${topic.title}»`,
+        body: excerptFromBody(body),
+        href: `/forum/topic/${topic.slug}#post-${postId}`,
+      },
+      now,
+    ),
+  );
+  await database.batch(statements);
   return { ok: true as const, postId };
 }
 
@@ -517,6 +658,9 @@ export async function createModerationReport(
 
   const id = crypto.randomUUID();
   const now = Math.floor(Date.now() / 1000);
+  const moderators = await database
+    .prepare("SELECT id FROM users WHERE role IN ('moderator', 'admin')")
+    .all<{ id: string }>();
   const statements = [
     database
       .prepare(
@@ -552,6 +696,22 @@ export async function createModerationReport(
         ),
     );
   }
+  statements.push(
+    ...notificationStatements(
+      database,
+      moderators.results.map((moderator) => moderator.id),
+      viewer.id,
+      {
+        notificationType: 'moderation_report',
+        entityType: 'report',
+        entityId: id,
+        title: `Новая жалоба: ${topic.title}`,
+        body: input.details,
+        href: '/moderation',
+      },
+      now,
+    ),
+  );
   await database.batch(statements);
   return { ok: true as const, id };
 }
@@ -560,15 +720,18 @@ export async function listModerationQueue(viewer: CommunityViewer) {
   if (!canModerate(viewer.role)) return null;
   await ensureCommunitySchema();
   const database = getDatabase();
-  const [topics, reports] = await Promise.all([
+  const [topics, reports, history] = await Promise.all([
     database
       .prepare(
         `SELECT topics.id, topics.slug, topics.title, topics.excerpt, topics.is_commercial,
                 topics.commercial_disclosure, topics.created_at,
-                forum_nodes.title AS forum_title, users.username AS author
+                topics.assigned_to_id, topics.resubmission_count,
+                forum_nodes.title AS forum_title, users.username AS author,
+                assigned.username AS assigned_to
          FROM topics
          JOIN forum_nodes ON forum_nodes.id = topics.forum_id
          JOIN users ON users.id = topics.author_id
+         LEFT JOIN users AS assigned ON assigned.id = topics.assigned_to_id
          WHERE topics.status = 'pending'
          ORDER BY topics.created_at ASC
          LIMIT 100`,
@@ -583,14 +746,19 @@ export async function listModerationQueue(viewer: CommunityViewer) {
         created_at: number;
         forum_title: string;
         author: string;
+        assigned_to_id: string | null;
+        assigned_to: string | null;
+        resubmission_count: number;
       }>(),
     database
       .prepare(
         `SELECT moderation_reports.id, moderation_reports.target_type, moderation_reports.target_id,
                 moderation_reports.reason, moderation_reports.details, moderation_reports.created_at,
-                users.username AS reporter, topics.slug AS target_slug, topics.title AS target_title
+                users.username AS reporter, topics.slug AS target_slug,
+                topics.title AS target_title, assigned.username AS assigned_to
          FROM moderation_reports
          JOIN users ON users.id = moderation_reports.reporter_id
+         LEFT JOIN users AS assigned ON assigned.id = moderation_reports.assigned_to_id
          LEFT JOIN topics
            ON moderation_reports.target_type = 'topic' AND topics.id = moderation_reports.target_id
          WHERE moderation_reports.status = 'open'
@@ -607,6 +775,28 @@ export async function listModerationQueue(viewer: CommunityViewer) {
         reporter: string;
         target_slug: string | null;
         target_title: string | null;
+        assigned_to: string | null;
+      }>(),
+    database
+      .prepare(
+        `SELECT moderation_actions.action, moderation_actions.note,
+                moderation_actions.created_at, users.username AS actor,
+                topics.slug AS topic_slug, topics.title AS topic_title,
+                moderation_actions.report_id
+         FROM moderation_actions
+         JOIN users ON users.id = moderation_actions.actor_user_id
+         LEFT JOIN topics ON topics.id = moderation_actions.topic_id
+         ORDER BY moderation_actions.created_at DESC
+         LIMIT 50`,
+      )
+      .all<{
+        action: string;
+        note: string;
+        created_at: number;
+        actor: string;
+        topic_slug: string | null;
+        topic_title: string | null;
+        report_id: string | null;
       }>(),
   ]);
 
@@ -619,34 +809,137 @@ export async function listModerationQueue(viewer: CommunityViewer) {
       ...report,
       created: formatRelativeTime(report.created_at),
     })),
+    history: history.results.map((action) => ({
+      ...action,
+      created: formatRelativeTime(action.created_at),
+    })),
   };
 }
 
 export async function moderateTopic(
   viewer: CommunityViewer,
   id: string,
-  action: 'approve' | 'reject',
+  action: 'approve' | 'reject' | 'block' | 'claim',
+  note = '',
 ) {
   if (!canModerate(viewer.role))
     return { ok: false as const, code: 'ACCESS_DENIED' as const };
   await ensureCommunitySchema();
   const database = getDatabase();
   const topic = await database
-    .prepare('SELECT id, status FROM topics WHERE id = ?')
+    .prepare(
+      `SELECT id, forum_id, author_id, slug, title, status, assigned_to_id
+       FROM topics WHERE id = ?`,
+    )
     .bind(id)
-    .first<{ id: string; status: string }>();
+    .first<{
+      id: string;
+      forum_id: string;
+      author_id: string;
+      slug: string;
+      title: string;
+      status: string;
+      assigned_to_id: string | null;
+    }>();
   if (!topic) return { ok: false as const, code: 'NOT_FOUND' as const };
+  if (
+    topic.assigned_to_id &&
+    topic.assigned_to_id !== viewer.id &&
+    viewer.role !== 'admin'
+  ) {
+    return { ok: false as const, code: 'ALREADY_ASSIGNED' as const };
+  }
   const now = Math.floor(Date.now() / 1000);
-  const status = action === 'approve' ? 'published' : 'rejected';
+  if (action === 'claim') {
+    if (topic.status !== 'pending')
+      return { ok: false as const, code: 'INVALID_STATUS' as const };
+    await database.batch([
+      database
+        .prepare(
+          'UPDATE topics SET assigned_to_id = ?, updated_at = ? WHERE id = ?',
+        )
+        .bind(viewer.id, now, id),
+      database
+        .prepare(
+          `INSERT INTO moderation_actions (
+            id, actor_user_id, topic_id, action, note, created_at
+          ) VALUES (?, ?, ?, 'claimed', ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), viewer.id, id, note, now),
+    ]);
+    return { ok: true as const, status: topic.status };
+  }
+  if (
+    (action === 'approve' || action === 'reject') &&
+    topic.status !== 'pending'
+  ) {
+    return { ok: false as const, code: 'INVALID_STATUS' as const };
+  }
+  if (action === 'block' && !['pending', 'published'].includes(topic.status)) {
+    return { ok: false as const, code: 'INVALID_STATUS' as const };
+  }
+
+  const status =
+    action === 'approve'
+      ? 'published'
+      : action === 'reject'
+        ? 'rejected'
+        : 'blocked';
+  const notificationTitle =
+    action === 'approve'
+      ? `Тема опубликована: ${topic.title}`
+      : action === 'reject'
+        ? `Тема возвращена на доработку: ${topic.title}`
+        : `Тема заблокирована: ${topic.title}`;
   const statements = [
     database
-      .prepare('UPDATE topics SET status = ?, updated_at = ? WHERE id = ?')
-      .bind(status, now, id),
+      .prepare(
+        `UPDATE topics
+         SET status = ?, is_locked = ?, assigned_to_id = ?, moderation_note = ?,
+             moderation_decided_at = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(
+        status,
+        action === 'approve' ? 0 : 1,
+        viewer.id,
+        note || null,
+        now,
+        now,
+        id,
+      ),
     database
       .prepare('UPDATE posts SET status = ?, updated_at = ? WHERE topic_id = ?')
       .bind(status, now, id),
+    database
+      .prepare(
+        `INSERT INTO moderation_actions (
+          id, actor_user_id, topic_id, action, note, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(crypto.randomUUID(), viewer.id, id, action, note, now),
+    ...notificationStatements(
+      database,
+      [topic.author_id],
+      viewer.id,
+      {
+        notificationType: `moderation_${action}`,
+        entityType: 'topic',
+        entityId: id,
+        title: notificationTitle,
+        body: note || 'Решение сохранено в истории модерации.',
+        href: `/forum/topic/${topic.slug}`,
+      },
+      now,
+    ),
   ];
   if (action === 'approve') {
+    const forumSubscribers = await database
+      .prepare(
+        'SELECT user_id AS id FROM forum_subscriptions WHERE forum_id = ?',
+      )
+      .bind(topic.forum_id)
+      .all<{ id: string }>();
     statements.push(
       database
         .prepare(
@@ -655,6 +948,20 @@ export async function moderateTopic(
           ) VALUES (?, ?, 'topic.published', 'topic', ?, 'pending', ?)`,
         )
         .bind(crypto.randomUUID(), viewer.id, id, now),
+      ...notificationStatements(
+        database,
+        forumSubscribers.results.map((subscriber) => subscriber.id),
+        topic.author_id,
+        {
+          notificationType: 'forum_topic',
+          entityType: 'topic',
+          entityId: id,
+          title: `Новая тема: ${topic.title}`,
+          body: 'Проверенная тема опубликована в подписанном разделе.',
+          href: `/forum/topic/${topic.slug}`,
+        },
+        now,
+      ),
     );
   }
   await database.batch(statements);
@@ -664,27 +971,181 @@ export async function moderateTopic(
 export async function resolveModerationReport(
   viewer: CommunityViewer,
   id: string,
-  action: 'resolve' | 'dismiss',
+  action: 'resolve' | 'dismiss' | 'claim',
+  note = '',
 ) {
   if (!canModerate(viewer.role))
     return { ok: false as const, code: 'ACCESS_DENIED' as const };
   await ensureCommunitySchema();
+  const database = getDatabase();
   const now = Math.floor(Date.now() / 1000);
-  const result = await getDatabase()
+  const report = await database
     .prepare(
-      `UPDATE moderation_reports
-       SET status = ?, assigned_to_id = ?, resolved_at = ?, updated_at = ?
-       WHERE id = ? AND status = 'open'`,
+      `SELECT moderation_reports.id, moderation_reports.reporter_id,
+              moderation_reports.assigned_to_id, moderation_reports.status,
+              moderation_reports.target_id, topics.slug AS topic_slug,
+              topics.title AS topic_title
+       FROM moderation_reports
+       LEFT JOIN topics
+         ON moderation_reports.target_type = 'topic' AND topics.id = moderation_reports.target_id
+       WHERE moderation_reports.id = ?`,
     )
-    .bind(
-      action === 'resolve' ? 'resolved' : 'dismissed',
+    .bind(id)
+    .first<{
+      id: string;
+      reporter_id: string;
+      assigned_to_id: string | null;
+      status: string;
+      target_id: string;
+      topic_slug: string | null;
+      topic_title: string | null;
+    }>();
+  if (!report || report.status !== 'open')
+    return { ok: false as const, code: 'NOT_FOUND' as const };
+  if (
+    report.assigned_to_id &&
+    report.assigned_to_id !== viewer.id &&
+    viewer.role !== 'admin'
+  ) {
+    return { ok: false as const, code: 'ALREADY_ASSIGNED' as const };
+  }
+  if (action === 'claim') {
+    await database.batch([
+      database
+        .prepare(
+          'UPDATE moderation_reports SET assigned_to_id = ?, updated_at = ? WHERE id = ?',
+        )
+        .bind(viewer.id, now, id),
+      database
+        .prepare(
+          `INSERT INTO moderation_actions (
+            id, actor_user_id, report_id, action, note, created_at
+          ) VALUES (?, ?, ?, 'claimed', ?, ?)`,
+        )
+        .bind(crypto.randomUUID(), viewer.id, id, note, now),
+    ]);
+    return { ok: true as const };
+  }
+  await database.batch([
+    database
+      .prepare(
+        `UPDATE moderation_reports
+         SET status = ?, assigned_to_id = ?, resolved_at = ?, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(
+        action === 'resolve' ? 'resolved' : 'dismissed',
+        viewer.id,
+        now,
+        now,
+        id,
+      ),
+    database
+      .prepare(
+        `INSERT INTO moderation_actions (
+          id, actor_user_id, report_id, action, note, created_at
+        ) VALUES (?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(crypto.randomUUID(), viewer.id, id, action, note, now),
+    ...notificationStatements(
+      database,
+      [report.reporter_id],
       viewer.id,
+      {
+        notificationType: `report_${action}`,
+        entityType: 'report',
+        entityId: id,
+        title:
+          action === 'resolve'
+            ? `Жалоба рассмотрена${report.topic_title ? `: ${report.topic_title}` : ''}`
+            : 'Жалоба отклонена',
+        body: note || 'Решение модератора сохранено.',
+        href: report.topic_slug
+          ? `/forum/topic/${report.topic_slug}`
+          : '/notifications',
+      },
       now,
+    ),
+  ]);
+  return { ok: true as const };
+}
+
+export async function resubmitTopic(
+  viewer: CommunityViewer,
+  slug: string,
+  input: { body: string; commercialDisclosure?: string },
+) {
+  const topic = await getTopicRow(slug);
+  if (!topic) return { ok: false as const, code: 'NOT_FOUND' as const };
+  if (topic.author_id !== viewer.id)
+    return { ok: false as const, code: 'ACCESS_DENIED' as const };
+  if (topic.status !== 'rejected')
+    return { ok: false as const, code: 'INVALID_STATUS' as const };
+  if (
+    topic.is_commercial &&
+    (!input.commercialDisclosure || input.commercialDisclosure.length < 20)
+  ) {
+    return { ok: false as const, code: 'DISCLOSURE_REQUIRED' as const };
+  }
+
+  const database = getDatabase();
+  const now = Math.floor(Date.now() / 1000);
+  const moderators = await database
+    .prepare("SELECT id FROM users WHERE role IN ('moderator', 'admin')")
+    .all<{ id: string }>();
+  await database.batch([
+    database
+      .prepare(
+        `UPDATE topics
+         SET excerpt = ?, status = 'pending', is_locked = 0, assigned_to_id = NULL,
+             commercial_disclosure = ?, moderation_note = NULL,
+             moderation_decided_at = NULL,
+             resubmission_count = resubmission_count + 1, updated_at = ?
+         WHERE id = ?`,
+      )
+      .bind(
+        excerptFromBody(input.body),
+        topic.is_commercial
+          ? input.commercialDisclosure || topic.commercial_disclosure
+          : topic.commercial_disclosure,
+        now,
+        topic.id,
+      ),
+    database
+      .prepare(
+        `UPDATE posts
+         SET body = ?, status = 'pending', edited_at = ?, updated_at = ?
+         WHERE topic_id = ? AND is_first_post = 1`,
+      )
+      .bind(input.body, now, now, topic.id),
+    database
+      .prepare(
+        `INSERT INTO moderation_actions (
+          id, actor_user_id, topic_id, action, note, created_at
+        ) VALUES (?, ?, ?, 'resubmitted', 'Материал обновлён автором', ?)`,
+      )
+      .bind(crypto.randomUUID(), viewer.id, topic.id, now),
+    database
+      .prepare(
+        `INSERT INTO community_events (
+          id, actor_user_id, event_type, entity_type, entity_id, status, created_at
+        ) VALUES (?, ?, 'topic.resubmitted', 'topic', ?, 'pending', ?)`,
+      )
+      .bind(crypto.randomUUID(), viewer.id, topic.id, now),
+    ...notificationStatements(
+      database,
+      moderators.results.map((moderator) => moderator.id),
+      viewer.id,
+      {
+        notificationType: 'moderation_resubmitted',
+        entityType: 'topic',
+        entityId: topic.id,
+        title: `Тема повторно отправлена: ${topic.title}`,
+        body: 'Автор внёс изменения после решения модератора.',
+        href: '/moderation',
+      },
       now,
-      id,
-    )
-    .run();
-  return result.meta.changes
-    ? { ok: true as const }
-    : { ok: false as const, code: 'NOT_FOUND' as const };
+    ),
+  ]);
+  return { ok: true as const, status: 'pending' as const };
 }

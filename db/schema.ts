@@ -142,6 +142,9 @@ export const topics = sqliteTable(
     authorId: text('author_id')
       .notNull()
       .references(() => users.id, { onDelete: 'restrict' }),
+    assignedToId: text('assigned_to_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
     slug: text('slug').notNull(),
     title: text('title').notNull(),
     excerpt: text('excerpt').notNull().default(''),
@@ -157,6 +160,9 @@ export const topics = sqliteTable(
       .notNull()
       .default(false),
     commercialDisclosure: text('commercial_disclosure'),
+    moderationNote: text('moderation_note'),
+    moderationDecidedAt: integer('moderation_decided_at'),
+    resubmissionCount: integer('resubmission_count').notNull().default(0),
     viewCount: integer('view_count').notNull().default(0),
     replyCount: integer('reply_count').notNull().default(0),
     lastPostAt: integer('last_post_at').notNull(),
@@ -320,6 +326,34 @@ export const topicSubscriptions = sqliteTable(
   ],
 );
 
+export const notifications = sqliteTable(
+  'notifications',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    actorUserId: text('actor_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    notificationType: text('notification_type').notNull(),
+    entityType: text('entity_type').notNull(),
+    entityId: text('entity_id').notNull(),
+    title: text('title').notNull(),
+    body: text('body').notNull().default(''),
+    href: text('href').notNull(),
+    isRead: integer('is_read', { mode: 'boolean' }).notNull().default(false),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_notifications_user_read_created').on(
+      table.userId,
+      table.isRead,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const moderationReports = sqliteTable(
   'moderation_reports',
   {
@@ -345,6 +379,36 @@ export const moderationReports = sqliteTable(
       table.createdAt,
     ),
     index('idx_moderation_reports_target').on(table.targetType, table.targetId),
+  ],
+);
+
+export const moderationActions = sqliteTable(
+  'moderation_actions',
+  {
+    id: text('id').primaryKey(),
+    actorUserId: text('actor_user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    topicId: text('topic_id').references(() => topics.id, {
+      onDelete: 'cascade',
+    }),
+    reportId: text('report_id').references(() => moderationReports.id, {
+      onDelete: 'cascade',
+    }),
+    action: text('action').notNull(),
+    note: text('note').notNull().default(''),
+    metadataJson: text('metadata_json'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_moderation_actions_topic_created').on(
+      table.topicId,
+      table.createdAt,
+    ),
+    index('idx_moderation_actions_report_created').on(
+      table.reportId,
+      table.createdAt,
+    ),
   ],
 );
 

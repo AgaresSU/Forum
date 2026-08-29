@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { Flag, Send } from 'lucide-react';
+import { Flag, RefreshCw, Send } from 'lucide-react';
 
 import { SubscriptionButton } from '@/components/forum/subscription-button';
 import { Button } from '@/components/ui/button';
@@ -236,6 +236,114 @@ export function ReplyComposer({
           <Button disabled={Boolean(disabledReason) || pending} type="submit">
             <Send data-icon="inline-start" />{' '}
             {pending ? 'Публикуем…' : 'Опубликовать ответ'}
+          </Button>
+        </div>
+      </form>
+    </section>
+  );
+}
+
+export function ResubmitEditor({
+  slug,
+  initialBody,
+  isCommercial,
+  initialDisclosure,
+}: {
+  slug: string;
+  initialBody: string;
+  isCommercial: boolean;
+  initialDisclosure: string;
+}) {
+  const [body, setBody] = useState(initialBody);
+  const [disclosure, setDisclosure] = useState(initialDisclosure);
+  const [pending, setPending] = useState(false);
+  const [message, setMessage] = useState('');
+
+  async function submit(event: React.SyntheticEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setPending(true);
+    setMessage('');
+    try {
+      const response = await fetch(
+        `/api/forum/topics/${encodeURIComponent(slug)}/resubmit`,
+        {
+          method: 'POST',
+          headers: { 'content-type': 'application/json' },
+          body: JSON.stringify({
+            body,
+            commercialDisclosure: isCommercial ? disclosure : undefined,
+          }),
+        },
+      );
+      const result = (await response.json()) as {
+        ok: boolean;
+        message?: string;
+      };
+      if (!response.ok || !result.ok)
+        throw new Error(result.message || 'Не удалось повторно отправить тему');
+      window.location.reload();
+    } catch (error) {
+      setMessage(
+        error instanceof Error
+          ? error.message
+          : 'Не удалось повторно отправить тему',
+      );
+      setPending(false);
+    }
+  }
+
+  return (
+    <section className="mb-4 rounded-2xl border border-violet-ink/15 bg-card p-5">
+      <h2 className="font-heading font-bold">
+        Доработать и отправить повторно
+      </h2>
+      <p className="mt-1 text-xs leading-5 text-muted-foreground">
+        Исправьте материал с учётом комментария. Предыдущие решения останутся в
+        истории.
+      </p>
+      <form onSubmit={submit} className="mt-4 space-y-4">
+        <div>
+          <label htmlFor="resubmit-body" className="text-sm font-semibold">
+            Текст темы
+          </label>
+          <Textarea
+            id="resubmit-body"
+            value={body}
+            onChange={(event) => setBody(event.target.value)}
+            required
+            minLength={40}
+            maxLength={50_000}
+            rows={9}
+            className="mt-2 resize-y"
+          />
+        </div>
+        {isCommercial && (
+          <div>
+            <label
+              htmlFor="resubmit-disclosure"
+              className="text-sm font-semibold"
+            >
+              Раскрытие заинтересованности
+            </label>
+            <Textarea
+              id="resubmit-disclosure"
+              value={disclosure}
+              onChange={(event) => setDisclosure(event.target.value)}
+              required
+              minLength={20}
+              maxLength={500}
+              rows={3}
+              className="mt-2 resize-none"
+            />
+          </div>
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-xs text-destructive" aria-live="polite">
+            {message}
+          </p>
+          <Button type="submit" disabled={pending}>
+            <RefreshCw data-icon="inline-start" />{' '}
+            {pending ? 'Отправляем…' : 'Отправить на повторную проверку'}
           </Button>
         </div>
       </form>

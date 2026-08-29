@@ -41,6 +41,7 @@ export default async function ForumSectionPage({
     <div className="min-h-screen bg-background text-foreground">
       <CommunityHeader
         username={user.username}
+        userId={user.id}
         role={user.role}
         active="forum"
       />
