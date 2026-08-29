@@ -307,6 +307,32 @@ export const reactions = sqliteTable(
   ],
 );
 
+export const userAdministrationAudit = sqliteTable(
+  'user_administration_audit',
+  {
+    id: text('id').primaryKey(),
+    targetUserId: text('target_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    actorUserId: text('actor_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    targetUsername: text('target_username').notNull(),
+    action: text('action').notNull(),
+    previousRole: text('previous_role'),
+    newRole: text('new_role'),
+    note: text('note').notNull().default(''),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_user_admin_audit_created').on(table.createdAt),
+    index('idx_user_admin_audit_target').on(
+      table.targetUserId,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const communityGroups = sqliteTable(
   'community_groups',
   {

@@ -194,6 +194,23 @@ export const reactionSchema = z.object({
   reactionType: z.enum(['helpful', 'insightful', 'thanks']),
 });
 
+export const userRoleChangeSchema = z.object({
+  role: z.enum([
+    'member',
+    'author',
+    'expert',
+    'pro',
+    'partner',
+    'moderator',
+    'admin',
+  ]),
+  note: z.string().trim().max(500).optional(),
+});
+
+export const userDeleteSchema = z.object({
+  note: z.string().trim().min(10).max(500),
+});
+
 export const publicationPolicy = {
   commercialDisclosureRequired: true,
   premoderatedForumSections: ['income', 'promotion'],

@@ -11,6 +11,7 @@
     "start": "wrangler dev --config dist/server/wrangler.json",
     "test:auth": "node scripts/smoke-auth.mjs",
     "test:editorial": "node scripts/smoke-editorial.mjs",
+    "test:admin": "node scripts/smoke-admin.mjs",
     "lint": "oxlint app components/community-header.tsx components/forum-home.tsx components/moderation-queue.tsx components/notification-center.tsx components/forum lib db scripts drizzle.config.ts vite.config.ts",
     "format": "oxfmt"
   },

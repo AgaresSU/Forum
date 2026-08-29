@@ -281,6 +281,14 @@ export function ForumHome({
                 Модерация
               </Link>
             )}
+            {role === 'admin' && (
+              <Link
+                href="/admin/users"
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              >
+                Админ
+              </Link>
+            )}
           </nav>
 
           <form
@@ -351,6 +359,7 @@ export function ForumHome({
               ...(role === 'moderator' || role === 'admin'
                 ? [['/moderation', 'Модерация']]
                 : []),
+              ...(role === 'admin' ? [['/admin/users', 'Админ']] : []),
             ].map(([href, label], index) => (
               <Link
                 key={href}

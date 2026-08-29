@@ -15,6 +15,7 @@ const protectedPages = [
   '/library/quality-manual-standard',
   '/library/affiliate-program-due-diligence',
   '/search',
+  '/admin/users',
   '/groups',
   '/editor',
   '/editor/new',
@@ -339,6 +340,11 @@ await expectJsonStatus(
   },
   403,
 );
+await expectJsonStatus(
+  '/api/admin/users/missing/role',
+  { role: 'author', note: 'Проверка запрета для обычного участника' },
+  403,
+);
 
 const totpSetup = await request('/api/auth/2fa/totp/setup', {});
 const totp = new OTPAuth.TOTP({
@@ -401,5 +407,6 @@ process.stdout.write(
     librarySearch: true,
     unifiedSearch: true,
     searchProGuard: true,
+    adminRoleGuard: true,
   })}\n`,
 );

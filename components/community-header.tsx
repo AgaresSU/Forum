@@ -1,5 +1,12 @@
 import Link from 'next/link';
-import { Bell, Code2, FilePenLine, Search, ShieldCheck } from 'lucide-react';
+import {
+  Bell,
+  Code2,
+  FilePenLine,
+  Search,
+  ShieldCheck,
+  UserCog,
+} from 'lucide-react';
 
 import { getUnreadNotificationCount } from '@/lib/forum/notifications';
 
@@ -20,6 +27,12 @@ const navigation = [
     key: 'moderation',
     moderation: true,
   },
+  {
+    href: '/admin/users',
+    label: 'Админ',
+    key: 'admin',
+    admin: true,
+  },
 ] as const;
 
 export async function CommunityHeader({
@@ -38,6 +51,7 @@ export async function CommunityHeader({
     if ('moderation' in item) return role === 'moderator' || role === 'admin';
     if ('editorial' in item)
       return ['author', 'expert', 'moderator', 'admin'].includes(role);
+    if ('admin' in item) return role === 'admin';
     return true;
   });
 
@@ -82,6 +96,7 @@ export async function CommunityHeader({
               {'editorial' in item && (
                 <FilePenLine className="mr-1 inline size-3.5" />
               )}
+              {'admin' in item && <UserCog className="mr-1 inline size-3.5" />}
               {item.label}
             </Link>
           ))}

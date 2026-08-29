@@ -114,6 +114,19 @@ const communitySchemaStatements = [
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_reactions_user_target ON reactions(user_id, target_type, target_id)',
   'CREATE INDEX IF NOT EXISTS idx_reactions_target ON reactions(target_type, target_id)',
   'CREATE INDEX IF NOT EXISTS idx_reactions_user_created ON reactions(user_id, created_at)',
+  `CREATE TABLE IF NOT EXISTS user_administration_audit (
+    id TEXT PRIMARY KEY,
+    target_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    actor_user_id TEXT REFERENCES users(id) ON DELETE SET NULL,
+    target_username TEXT NOT NULL,
+    action TEXT NOT NULL,
+    previous_role TEXT,
+    new_role TEXT,
+    note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  )`,
+  'CREATE INDEX IF NOT EXISTS idx_user_admin_audit_created ON user_administration_audit(created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_user_admin_audit_target ON user_administration_audit(target_user_id, created_at)',
   `CREATE TABLE IF NOT EXISTS community_groups (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
