@@ -129,6 +129,65 @@ export const topicResubmissionSchema = z.object({
   commercialDisclosure: z.string().trim().max(500).optional(),
 });
 
+const editorialFields = {
+  title: z.string().trim().min(8).max(160),
+  summary: z.string().trim().min(20).max(500),
+  body: z.string().trim().min(80).max(100_000),
+  accessLevel: z.enum(['member', 'pro']),
+  isCommercial: z.boolean().default(false),
+  commercialDisclosure: z.string().trim().max(500).optional(),
+  discussionSlug: z.string().trim().max(160).optional(),
+  changeNote: z.string().trim().max(500).optional(),
+};
+
+function validateEditorialDisclosure(
+  value: { isCommercial: boolean; commercialDisclosure?: string },
+  context: z.RefinementCtx,
+) {
+  if (!value.isCommercial) return;
+  const result = commercialDisclosureSchema.safeParse(
+    value.commercialDisclosure,
+  );
+  if (!result.success) {
+    context.addIssue({
+      code: 'custom',
+      path: ['commercialDisclosure'],
+      message:
+        result.error.issues[0]?.message || 'Раскройте коммерческую связь.',
+    });
+  }
+}
+
+export const editorialCreateSchema = z
+  .object({
+    contentType: z.enum(['article', 'manual']),
+    ...editorialFields,
+  })
+  .superRefine(validateEditorialDisclosure);
+
+export const editorialRevisionSchema = z
+  .object({
+    action: z.enum(['save', 'submit', 'publish', 'reject']),
+    ...editorialFields,
+  })
+  .superRefine((value, context) => {
+    validateEditorialDisclosure(value, context);
+    if (
+      value.action === 'reject' &&
+      (!value.changeNote || value.changeNote.length < 10)
+    ) {
+      context.addIssue({
+        code: 'custom',
+        path: ['changeNote'],
+        message: 'Для возврата материала добавьте редакционный комментарий.',
+      });
+    }
+  });
+
+export const editorialRestoreSchema = z.object({
+  revision: z.number().int().positive(),
+});
+
 export const publicationPolicy = {
   commercialDisclosureRequired: true,
   premoderatedForumSections: ['income', 'promotion'],

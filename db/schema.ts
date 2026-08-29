@@ -246,6 +246,44 @@ export const contentRecords = sqliteTable(
   ],
 );
 
+export const contentRevisions = sqliteTable(
+  'content_revisions',
+  {
+    id: text('id').primaryKey(),
+    contentRecordId: text('content_record_id')
+      .notNull()
+      .references(() => contentRecords.id, { onDelete: 'cascade' }),
+    editorId: text('editor_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'restrict' }),
+    discussionTopicId: text('discussion_topic_id').references(() => topics.id, {
+      onDelete: 'set null',
+    }),
+    revision: integer('revision').notNull(),
+    workflowStatus: text('workflow_status').notNull().default('draft'),
+    title: text('title').notNull(),
+    summary: text('summary').notNull().default(''),
+    body: text('body').notNull(),
+    accessLevel: text('access_level').notNull().default('member'),
+    isCommercial: integer('is_commercial', { mode: 'boolean' })
+      .notNull()
+      .default(false),
+    commercialDisclosure: text('commercial_disclosure'),
+    changeNote: text('change_note').notNull().default(''),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_content_revisions_record_revision').on(
+      table.contentRecordId,
+      table.revision,
+    ),
+    index('idx_content_revisions_status_created').on(
+      table.workflowStatus,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const communityGroups = sqliteTable(
   'community_groups',
   {

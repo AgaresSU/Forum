@@ -85,6 +85,24 @@ const communitySchemaStatements = [
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_content_records_slug ON content_records(slug)',
   'CREATE INDEX IF NOT EXISTS idx_content_records_type_status_published ON content_records(content_type, status, published_at)',
   'CREATE INDEX IF NOT EXISTS idx_content_records_author_created ON content_records(author_id, created_at)',
+  `CREATE TABLE IF NOT EXISTS content_revisions (
+    id TEXT PRIMARY KEY,
+    content_record_id TEXT NOT NULL REFERENCES content_records(id) ON DELETE CASCADE,
+    editor_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
+    discussion_topic_id TEXT REFERENCES topics(id) ON DELETE SET NULL,
+    revision INTEGER NOT NULL,
+    workflow_status TEXT NOT NULL DEFAULT 'draft',
+    title TEXT NOT NULL,
+    summary TEXT NOT NULL DEFAULT '',
+    body TEXT NOT NULL,
+    access_level TEXT NOT NULL DEFAULT 'member',
+    is_commercial INTEGER NOT NULL DEFAULT 0,
+    commercial_disclosure TEXT,
+    change_note TEXT NOT NULL DEFAULT '',
+    created_at INTEGER NOT NULL
+  )`,
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_content_revisions_record_revision ON content_revisions(content_record_id, revision)',
+  'CREATE INDEX IF NOT EXISTS idx_content_revisions_status_created ON content_revisions(workflow_status, created_at)',
   `CREATE TABLE IF NOT EXISTS community_groups (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,
@@ -480,6 +498,32 @@ async function seedEditorialContent() {
   await batchInChunks(database, [...authorStatements, ...contentStatements]);
 }
 
+async function ensureInitialContentRevisions() {
+  const database = getDatabase();
+  await database
+    .prepare(
+      `INSERT OR IGNORE INTO content_revisions (
+        id, content_record_id, editor_id, discussion_topic_id, revision,
+        workflow_status, title, summary, body, access_level, is_commercial,
+        commercial_disclosure, change_note, created_at
+      )
+      SELECT 'initial:' || content_records.id || ':' || content_records.revision,
+             content_records.id, content_records.author_id,
+             content_records.discussion_topic_id, content_records.revision,
+             content_records.status, content_records.title,
+             content_records.summary, content_records.body,
+             content_records.access_level, content_records.is_commercial,
+             content_records.commercial_disclosure, 'Начальная редакция',
+             content_records.updated_at
+      FROM content_records
+      WHERE NOT EXISTS (
+        SELECT 1 FROM content_revisions
+        WHERE content_revisions.content_record_id = content_records.id
+      )`,
+    )
+    .run();
+}
+
 export function ensureCommunitySchema() {
   communitySchemaReady ??= (async () => {
     await ensureAuthSchema();
@@ -491,6 +535,7 @@ export function ensureCommunitySchema() {
     await seedForumNodes();
     await seedCuratedTopics();
     await seedEditorialContent();
+    await ensureInitialContentRevisions();
     await database.prepare('PRAGMA optimize').run();
   })();
   return communitySchemaReady;

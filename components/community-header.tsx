@@ -1,5 +1,5 @@
 import Link from 'next/link';
-import { Bell, Code2, Search, ShieldCheck } from 'lucide-react';
+import { Bell, Code2, FilePenLine, Search, ShieldCheck } from 'lucide-react';
 
 import { getUnreadNotificationCount } from '@/lib/forum/notifications';
 
@@ -8,6 +8,12 @@ const navigation = [
   { href: '/journal', label: 'Журнал', key: 'journal' },
   { href: '/library', label: 'База знаний', key: 'library' },
   { href: '/groups', label: 'Группы', key: 'groups' },
+  {
+    href: '/editor',
+    label: 'Редактор',
+    key: 'editor',
+    editorial: true,
+  },
   {
     href: '/moderation',
     label: 'Модерация',
@@ -28,10 +34,12 @@ export async function CommunityHeader({
   active: (typeof navigation)[number]['key'];
 }) {
   const unreadCount = userId ? await getUnreadNotificationCount(userId) : 0;
-  const visibleNavigation = navigation.filter(
-    (item) =>
-      !('moderation' in item) || role === 'moderator' || role === 'admin',
-  );
+  const visibleNavigation = navigation.filter((item) => {
+    if ('moderation' in item) return role === 'moderator' || role === 'admin';
+    if ('editorial' in item)
+      return ['author', 'expert', 'moderator', 'admin'].includes(role);
+    return true;
+  });
 
   return (
     <header className="sticky top-0 z-40 border-b border-border/80 bg-background/95 backdrop-blur-xl">
@@ -70,6 +78,9 @@ export async function CommunityHeader({
             >
               {'moderation' in item && (
                 <ShieldCheck className="mr-1 inline size-3.5" />
+              )}
+              {'editorial' in item && (
+                <FilePenLine className="mr-1 inline size-3.5" />
               )}
               {item.label}
             </Link>

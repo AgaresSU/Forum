@@ -15,6 +15,7 @@ import {
   Lock,
   Megaphone,
   Newspaper,
+  FilePenLine,
   Plus,
   Search,
   ServerCog,
@@ -264,6 +265,22 @@ export function ForumHome({
             >
               Группы
             </Link>
+            {['author', 'expert', 'moderator', 'admin'].includes(role) && (
+              <Link
+                href="/editor"
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              >
+                <FilePenLine className="mr-1 inline size-3.5" /> Редактор
+              </Link>
+            )}
+            {(role === 'moderator' || role === 'admin') && (
+              <Link
+                href="/moderation"
+                className="rounded-lg px-3 py-2 text-sm font-semibold text-muted-foreground transition hover:bg-muted hover:text-foreground"
+              >
+                Модерация
+              </Link>
+            )}
           </nav>
 
           <label className="relative ml-auto hidden w-full max-w-[350px] md:block">
@@ -314,6 +331,12 @@ export function ForumHome({
               ['/journal', 'Журнал'],
               ['/library', 'База знаний'],
               ['/groups', 'Группы'],
+              ...(['author', 'expert', 'moderator', 'admin'].includes(role)
+                ? [['/editor', 'Редактор']]
+                : []),
+              ...(role === 'moderator' || role === 'admin'
+                ? [['/moderation', 'Модерация']]
+                : []),
             ].map(([href, label], index) => (
               <Link
                 key={href}

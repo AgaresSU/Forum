@@ -15,6 +15,8 @@ const protectedPages = [
   '/library/quality-manual-standard',
   '/library/affiliate-program-due-diligence',
   '/groups',
+  '/editor',
+  '/editor/new',
   '/moderation',
   '/notifications',
 ];
@@ -218,6 +220,19 @@ await expectJsonStatus(
   { action: 'approve' },
   403,
 );
+await expectJsonStatus(
+  '/api/editor/content',
+  {
+    contentType: 'article',
+    title: `Smoke: редакционный доступ ${suffix}`,
+    summary:
+      'Обычный участник не должен создавать редакционные материалы через API.',
+    body: 'Этот текст достаточно длинный для прохождения проверки формы, но сервер обязан остановить запрос по роли участника до создания редакционного материала.',
+    accessLevel: 'member',
+    isCommercial: false,
+  },
+  403,
+);
 
 const totpSetup = await request('/api/auth/2fa/totp/setup', {});
 const totp = new OTPAuth.TOTP({
@@ -270,6 +285,7 @@ process.stdout.write(
     reports: true,
     premoderation: true,
     moderationRoleGuard: true,
+    editorialRoleGuard: true,
     notifications: true,
     editorialContent: true,
     proContentGuard: true,

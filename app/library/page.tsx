@@ -175,8 +175,8 @@ export default async function LibraryPage({
                 </h2>
               </div>
               <p className="mt-2 text-xs leading-5 text-muted-foreground">
-                Номер редакции и время обновления берутся из записи материала.
-                Полная история версий будет следующим этапом.
+                Авторы сохраняют каждое изменение отдельной редакцией. Команда
+                может проверить, опубликовать или восстановить прошлую версию.
               </p>
             </section>
             <section className="rounded-2xl border border-emerald-ink/15 bg-emerald-soft p-5 text-emerald-ink">
