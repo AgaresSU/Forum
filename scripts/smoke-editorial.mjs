@@ -10,7 +10,7 @@ const password = 'ForumPass123!';
 const authorEmail = `editorial-author+${suffix}@local.test`;
 const managerEmail = `editorial-manager+${suffix}@local.test`;
 
-function changeRole(email, role) {
+function executeLocalSql(command) {
   const result = spawnSync(
     process.execPath,
     [
@@ -24,15 +24,19 @@ function changeRole(email, role) {
       '--persist-to',
       '.wrangler/state',
       '--command',
-      `UPDATE users SET role = '${role}' WHERE email = '${email}'`,
+      command,
     ],
     { encoding: 'utf8', stdio: 'pipe' },
   );
   if (result.status !== 0) {
     throw new Error(
-      `Role update failed: ${result.error?.message || result.stderr || result.stdout || result.status}`,
+      `Local D1 command failed: ${result.error?.message || result.stderr || result.stdout || result.status}`,
     );
   }
+}
+
+function changeRole(email, role) {
+  executeLocalSql(`UPDATE users SET role = '${role}' WHERE email = '${email}'`);
 }
 
 async function api(session, path, body) {
@@ -95,6 +99,7 @@ const baseFields = {
 
 let authorRegistered = false;
 let managerRegistered = false;
+let contentId = '';
 try {
   const authorSession = await register(authorEmail, `ed_author_${suffix}`);
   authorRegistered = true;
@@ -109,6 +114,7 @@ try {
     body: originalBody,
     changeNote: 'Создан материал для сквозной проверки.',
   });
+  contentId = created.id;
   const editorPath = `/editor/${encodeURIComponent(created.id)}`;
   if (!(await page(authorSession, editorPath)).includes(baseFields.title)) {
     throw new Error('Author cannot open the created material');
@@ -206,6 +212,13 @@ try {
     })}\n`,
   );
 } finally {
-  if (authorRegistered) changeRole(authorEmail, 'member');
-  if (managerRegistered) changeRole(managerEmail, 'member');
+  const cleanup = [];
+  if (contentId)
+    cleanup.push(`DELETE FROM content_records WHERE id = '${contentId}'`);
+  if (authorRegistered || managerRegistered) {
+    cleanup.push(
+      `DELETE FROM users WHERE email IN ('${authorEmail}', '${managerEmail}')`,
+    );
+  }
+  if (cleanup.length) executeLocalSql(`${cleanup.join('; ')};`);
 }
