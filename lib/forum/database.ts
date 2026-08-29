@@ -103,6 +103,17 @@ const communitySchemaStatements = [
   )`,
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_content_revisions_record_revision ON content_revisions(content_record_id, revision)',
   'CREATE INDEX IF NOT EXISTS idx_content_revisions_status_created ON content_revisions(workflow_status, created_at)',
+  `CREATE TABLE IF NOT EXISTS reactions (
+    id TEXT PRIMARY KEY,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    target_type TEXT NOT NULL,
+    target_id TEXT NOT NULL,
+    reaction_type TEXT NOT NULL,
+    created_at INTEGER NOT NULL
+  )`,
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_reactions_user_target ON reactions(user_id, target_type, target_id)',
+  'CREATE INDEX IF NOT EXISTS idx_reactions_target ON reactions(target_type, target_id)',
+  'CREATE INDEX IF NOT EXISTS idx_reactions_user_created ON reactions(user_id, created_at)',
   `CREATE TABLE IF NOT EXISTS community_groups (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,

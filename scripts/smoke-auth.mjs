@@ -138,6 +138,15 @@ const topic = await request('/api/forum/topics', {
 if (topic.status !== 'published')
   throw new Error('Regular forum topic must be published immediately');
 await expectProtectedPage(`/forum/topic/${encodeURIComponent(topic.slug)}`);
+await expectJsonStatus(
+  '/api/forum/reactions',
+  {
+    targetType: 'topic',
+    targetId: topic.topicId,
+    reactionType: 'helpful',
+  },
+  403,
+);
 await request(`/api/forum/topics/${encodeURIComponent(topic.slug)}/posts`, {
   body: 'Проверочный ответ подтверждает запись сообщения и обновление счётчика активности темы.',
 });
@@ -200,6 +209,80 @@ const replyRegistration = await requestWithSession(
 await requestWithSession(replySession, '/api/auth/verify-email', {
   email: replyEmail,
   code: replyRegistration.devCode,
+});
+const helpfulReaction = await requestWithSession(
+  replySession,
+  '/api/forum/reactions',
+  {
+    targetType: 'topic',
+    targetId: topic.topicId,
+    reactionType: 'helpful',
+  },
+);
+if (
+  helpfulReaction.selected !== 'helpful' ||
+  helpfulReaction.summary.counts.helpful !== 1
+) {
+  throw new Error('Helpful topic reaction was not persisted');
+}
+const switchedReaction = await requestWithSession(
+  replySession,
+  '/api/forum/reactions',
+  {
+    targetType: 'topic',
+    targetId: topic.topicId,
+    reactionType: 'insightful',
+  },
+);
+if (
+  switchedReaction.selected !== 'insightful' ||
+  switchedReaction.summary.counts.helpful !== 0 ||
+  switchedReaction.summary.counts.insightful !== 1
+) {
+  throw new Error('Reaction switch must replace the previous reaction');
+}
+await requestWithSession(replySession, '/api/forum/reactions', {
+  targetType: 'topic',
+  targetId: topic.topicId,
+  reactionType: 'insightful',
+});
+await expectJsonStatus(
+  '/api/forum/reactions',
+  {
+    targetType: 'post',
+    targetId: 'sample-post:go-connection-leak:first',
+    reactionType: 'helpful',
+  },
+  400,
+);
+await expectJsonStatus(
+  '/api/forum/reactions',
+  {
+    targetType: 'content',
+    targetId: 'seed-content:observability-without-platform-team',
+    reactionType: 'helpful',
+  },
+  403,
+);
+const contentReaction = await request('/api/forum/reactions', {
+  targetType: 'content',
+  targetId: 'seed-content:modular-monolith-practical-choice',
+  reactionType: 'thanks',
+});
+if (
+  contentReaction.selected !== 'thanks' ||
+  contentReaction.summary.counts.thanks < 1
+) {
+  throw new Error('Editorial content reaction was not persisted');
+}
+await expectPageContent(
+  '/journal/modular-monolith-practical-choice',
+  'Оцените практическую пользу материала',
+);
+await request('/api/forum/reactions', {
+  targetType: 'content',
+  targetId: 'seed-content:modular-monolith-practical-choice',
+  reactionType: 'thanks',
 });
 await requestWithSession(
   replySession,
@@ -289,6 +372,9 @@ process.stdout.write(
     notifications: true,
     editorialContent: true,
     proContentGuard: true,
+    reactions: true,
+    reactionAntiSpam: true,
+    contributionReputation: true,
     librarySearch: true,
   })}\n`,
 );

@@ -12,8 +12,13 @@ import {
 } from 'lucide-react';
 
 import { CommunityHeader } from '@/components/community-header';
+import { ContributionMark, ReactionBar } from '@/components/forum/reaction-bar';
 import { buttonVariants } from '@/components/ui/button';
 import type { EditorialContentRecord } from '@/lib/forum/content-repository';
+import {
+  getContributionSummaries,
+  getReactionSummary,
+} from '@/lib/forum/reactions';
 
 type EditorialUser = {
   id: string;
@@ -31,6 +36,20 @@ export async function EditorialContentPage({
   const isManual = record.contentType === 'manual';
   const indexHref = isManual ? '/library' : '/journal';
   const indexLabel = isManual ? 'База знаний' : 'Журнал';
+  const [reactionSummary, contributionSummaries] = await Promise.all([
+    record.locked
+      ? Promise.resolve({
+          counts: { helpful: 0, insightful: 0, thanks: 0 },
+          myReaction: null,
+        } as const)
+      : getReactionSummary(user.id, 'content', record.id),
+    getContributionSummaries([record.authorId]),
+  ]);
+  const contribution = contributionSummaries.get(record.authorId) || {
+    score: 0,
+    reactions: 0,
+    label: 'Новый вклад',
+  };
 
   return (
     <div className="min-h-screen bg-background text-foreground">
@@ -74,6 +93,10 @@ export async function EditorialContentPage({
             <span className="inline-flex items-center gap-1.5">
               <UserRound className="size-3.5" /> {record.author}
             </span>
+            <ContributionMark
+              score={contribution.score}
+              label={contribution.label}
+            />
             <span className="inline-flex items-center gap-1.5">
               <Clock3 className="size-3.5" /> {record.readingMinutes} мин.
               чтения
@@ -126,6 +149,17 @@ export async function EditorialContentPage({
                   <p key={`${record.id}-${index}`}>{paragraph}</p>
                 ))}
               </div>
+              <footer className="mt-8 border-t border-border pt-5">
+                <p className="mb-3 text-[11px] font-semibold text-muted-foreground">
+                  Оцените практическую пользу материала
+                </p>
+                <ReactionBar
+                  targetType="content"
+                  targetId={record.id}
+                  initialSummary={reactionSummary}
+                  ownTarget={record.authorId === user.id}
+                />
+              </footer>
             </article>
 
             <aside className="space-y-4 lg:sticky lg:top-24">

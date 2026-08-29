@@ -71,12 +71,12 @@ export type PersistedTopicListItem = {
 
 export type PersistedTopicPost = {
   id: string;
+  authorId: string;
   author: string;
   authorRole: string;
   initials: string;
   published: string;
   body: string[];
-  reactions: number;
   status: string;
 };
 
@@ -398,12 +398,12 @@ export async function getTopicView(slug: string, viewer: CommunityViewer) {
     subscriberCount: subscriberCount?.count || 0,
     posts: postsResult.results.map<PersistedTopicPost>((post) => ({
       id: post.id,
+      authorId: post.author_id,
       author: post.author,
       authorRole: roleLabel(post.author_role),
       initials: post.author.slice(0, 2).toLocaleUpperCase('ru'),
       published: formatRelativeTime(post.created_at),
       body: post.body.split(/\n{2,}/).filter(Boolean),
-      reactions: 0,
       status: post.status,
     })),
     moderationHistory:

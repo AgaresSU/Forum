@@ -19,6 +19,7 @@ type EditorialRow = {
   commercial_disclosure: string | null;
   published_at: number;
   updated_at: number;
+  author_id: string;
   author: string;
   discussion_slug: string | null;
   category: string | null;
@@ -53,6 +54,7 @@ function mapEditorialRow(row: EditorialRow, viewerRole?: string) {
     title: row.title,
     summary: row.summary,
     body: locked || !row.body ? [] : row.body.split(/\n{2,}/).filter(Boolean),
+    authorId: row.author_id,
     author: row.author,
     category:
       row.category ||
@@ -77,7 +79,8 @@ const editorialSelect = `
          content_records.access_level, content_records.revision,
          content_records.is_commercial, content_records.commercial_disclosure,
          content_records.published_at, content_records.updated_at,
-         users.username AS author, topics.slug AS discussion_slug,
+         users.id AS author_id, users.username AS author,
+         topics.slug AS discussion_slug,
          forum_nodes.title AS category
   FROM content_records
   JOIN users ON users.id = content_records.author_id

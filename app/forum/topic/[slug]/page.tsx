@@ -2,7 +2,6 @@ import Link from 'next/link';
 import { notFound } from 'next/navigation';
 import {
   ChevronRight,
-  Heart,
   Lock,
   MessageCircleReply,
   MoreHorizontal,
@@ -15,9 +14,15 @@ import {
   ResubmitEditor,
   TopicActions,
 } from '@/components/forum/topic-interactions';
+import { ContributionMark, ReactionBar } from '@/components/forum/reaction-bar';
 import { buttonVariants } from '@/components/ui/button';
 import { canAccessRole, decodeRouteValue } from '@/lib/forum/access';
 import { getTopicView } from '@/lib/forum/repository';
+import {
+  getContributionSummaries,
+  getReactionSummaries,
+  reactionSummaryKey,
+} from '@/lib/forum/reactions';
 import { findTopic, getForumBySlug } from '@/lib/forum/sample-content';
 import { requireCommunityUser } from '@/lib/forum/require-community-user';
 
@@ -104,6 +109,19 @@ export default async function TopicPage({
 
   const found = getForumBySlug(topic.forumSlug);
   if (!found) notFound();
+  const [reactionSummaries, contributionSummaries] = await Promise.all([
+    getReactionSummaries(user.id, [
+      { targetType: 'topic', targetId: topic.id },
+      ...topic.posts.slice(1).map((post) => ({
+        targetType: 'post' as const,
+        targetId: post.id,
+      })),
+    ]),
+    getContributionSummaries([
+      topic.authorId,
+      ...topic.posts.map((post) => post.authorId),
+    ]),
+  ]);
   const { section, forum } = found;
   const disabledReason = topic.locked
     ? 'Обсуждение закрыто модератором.'
@@ -248,6 +266,18 @@ export default async function TopicPage({
                             <p className="mt-0.5 text-[11px] font-semibold text-muted-foreground">
                               {post.authorRole}
                             </p>
+                            <span className="mt-2 block">
+                              <ContributionMark
+                                score={
+                                  contributionSummaries.get(post.authorId)
+                                    ?.score || 0
+                                }
+                                label={
+                                  contributionSummaries.get(post.authorId)
+                                    ?.label || 'Новый вклад'
+                                }
+                              />
+                            </span>
                           </div>
                         </div>
                         <dl className="mt-4 hidden space-y-2 text-[11px] sm:block">
@@ -255,12 +285,6 @@ export default async function TopicPage({
                             <dt className="text-muted-foreground">Сообщений</dt>
                             <dd className="font-bold">
                               {index === 0 ? 284 : 96 + index * 17}
-                            </dd>
-                          </div>
-                          <div className="flex justify-between">
-                            <dt className="text-muted-foreground">Репутация</dt>
-                            <dd className="font-bold text-emerald-ink">
-                              +{42 + index * 13}
                             </dd>
                           </div>
                         </dl>
@@ -292,13 +316,32 @@ export default async function TopicPage({
                           ))}
                         </div>
                         <footer className="mt-6 flex items-center justify-between border-t border-border pt-4">
-                          <button
-                            type="button"
-                            className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition hover:text-emerald-ink"
-                          >
-                            <Heart className="size-3.5" /> Полезно ·{' '}
-                            {post.reactions}
-                          </button>
+                          {topic.status === 'published' ? (
+                            <ReactionBar
+                              targetType={index === 0 ? 'topic' : 'post'}
+                              targetId={index === 0 ? topic.id : post.id}
+                              initialSummary={
+                                reactionSummaries.get(
+                                  reactionSummaryKey(
+                                    index === 0 ? 'topic' : 'post',
+                                    index === 0 ? topic.id : post.id,
+                                  ),
+                                ) || {
+                                  counts: {
+                                    helpful: 0,
+                                    insightful: 0,
+                                    thanks: 0,
+                                  },
+                                  myReaction: null,
+                                }
+                              }
+                              ownTarget={post.authorId === user.id}
+                            />
+                          ) : (
+                            <span className="text-xs text-muted-foreground">
+                              Реакции доступны после публикации
+                            </span>
+                          )}
                           <a
                             href="#reply"
                             className="inline-flex items-center gap-1.5 text-xs font-semibold text-muted-foreground transition hover:text-foreground"

@@ -188,6 +188,12 @@ export const editorialRestoreSchema = z.object({
   revision: z.number().int().positive(),
 });
 
+export const reactionSchema = z.object({
+  targetType: z.enum(['topic', 'post', 'content']),
+  targetId: z.string().trim().min(1).max(200),
+  reactionType: z.enum(['helpful', 'insightful', 'thanks']),
+});
+
 export const publicationPolicy = {
   commercialDisclosureRequired: true,
   premoderatedForumSections: ['income', 'promotion'],

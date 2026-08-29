@@ -284,6 +284,29 @@ export const contentRevisions = sqliteTable(
   ],
 );
 
+export const reactions = sqliteTable(
+  'reactions',
+  {
+    id: text('id').primaryKey(),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id').notNull(),
+    reactionType: text('reaction_type').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_reactions_user_target').on(
+      table.userId,
+      table.targetType,
+      table.targetId,
+    ),
+    index('idx_reactions_target').on(table.targetType, table.targetId),
+    index('idx_reactions_user_created').on(table.userId, table.createdAt),
+  ],
+);
+
 export const communityGroups = sqliteTable(
   'community_groups',
   {
