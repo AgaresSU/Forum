@@ -1,0 +1,1 @@
+CREATE INDEX `idx_topics_status_created` ON `topics` (`status`,`created_at`);

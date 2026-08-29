@@ -20,7 +20,7 @@ export default async function LibraryPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <CommunityHeader username={user.username} active="library" />
+      <CommunityHeader username={user.username} role={user.role} active="library" />
       <main className="mx-auto max-w-[1280px] px-4 py-7 sm:px-6 lg:px-8">
         <header className="grid gap-6 border-b border-border pb-7 lg:grid-cols-[minmax(0,1fr)_360px] lg:items-end">
           <div>

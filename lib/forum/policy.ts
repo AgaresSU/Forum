@@ -18,22 +18,26 @@ export const prohibitedContentCategories = [
   {
     key: 'fraud',
     title: 'Мошенничество и обман',
-    description: 'Фишинг, скам, социальная инженерия и схемы с заведомым ущербом для третьих лиц.',
+    description:
+      'Фишинг, скам, социальная инженерия и схемы с заведомым ущербом для третьих лиц.',
   },
   {
     key: 'stolen-access',
     title: 'Чужие аккаунты и данные',
-    description: 'Продажа, покупка, подбор или распространение чужих доступов и персональных данных.',
+    description:
+      'Продажа, покупка, подбор или распространение чужих доступов и персональных данных.',
   },
   {
     key: 'malware',
     title: 'Вредоносное ПО',
-    description: 'Разработка, распространение и эксплуатация ПО для несанкционированного доступа или ущерба.',
+    description:
+      'Разработка, распространение и эксплуатация ПО для несанкционированного доступа или ущерба.',
   },
   {
     key: 'evasion',
     title: 'Обход закона и ограничений',
-    description: 'Инструкции, направленные на нарушение закона, правил платёжных систем или рекламных площадок.',
+    description:
+      'Инструкции, направленные на нарушение закона, правил платёжных систем или рекламных площадок.',
   },
 ] as const;
 
@@ -54,12 +58,15 @@ export const topicDraftSchema = z
   .superRefine((topic, context) => {
     if (!topic.isCommercial) return;
 
-    const result = commercialDisclosureSchema.safeParse(topic.commercialDisclosure);
+    const result = commercialDisclosureSchema.safeParse(
+      topic.commercialDisclosure,
+    );
     if (!result.success) {
       context.addIssue({
         code: 'custom',
         path: ['commercialDisclosure'],
-        message: result.error.issues[0]?.message || 'Раскройте коммерческую связь.',
+        message:
+          result.error.issues[0]?.message || 'Раскройте коммерческую связь.',
       });
     }
   });
@@ -67,8 +74,32 @@ export const topicDraftSchema = z
 export const moderationReportSchema = z.object({
   targetType: z.enum(['topic', 'post', 'content', 'group']),
   targetId: z.string().trim().min(1).max(100),
-  reason: z.enum(['illegal', 'fraud', 'spam', 'harassment', 'personal_data', 'other']),
+  reason: z.enum([
+    'illegal',
+    'fraud',
+    'spam',
+    'harassment',
+    'personal_data',
+    'other',
+  ]),
   details: z.string().trim().min(10).max(2_000),
+});
+
+export const replyDraftSchema = z.object({
+  body: z
+    .string()
+    .trim()
+    .min(10, 'Ответ должен содержать хотя бы 10 символов.')
+    .max(20_000),
+});
+
+export const subscriptionSchema = z.object({
+  targetType: z.enum(['forum', 'topic']),
+  slug: z.string().trim().min(1).max(160),
+});
+
+export const moderationActionSchema = z.object({
+  action: z.enum(['approve', 'reject', 'resolve', 'dismiss']),
 });
 
 export const publicationPolicy = {

@@ -3,6 +3,7 @@ import { env } from 'cloudflare:workers';
 import { ensureAuthSchema } from '@/lib/auth/database';
 import { forumSections } from '@/lib/forum/catalog';
 import type { CommunityEventType } from '@/lib/forum/policy';
+import { findTopic, getForumTopics } from '@/lib/forum/sample-content';
 
 const communitySchemaStatements = [
   `CREATE TABLE IF NOT EXISTS forum_nodes (
@@ -44,6 +45,7 @@ const communitySchemaStatements = [
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_topics_slug ON topics(slug)',
   'CREATE INDEX IF NOT EXISTS idx_topics_forum_status_last_post ON topics(forum_id, status, last_post_at)',
   'CREATE INDEX IF NOT EXISTS idx_topics_author_created ON topics(author_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_topics_status_created ON topics(status, created_at)',
   `CREATE TABLE IF NOT EXISTS posts (
     id TEXT PRIMARY KEY,
     topic_id TEXT NOT NULL REFERENCES topics(id) ON DELETE CASCADE,
@@ -169,7 +171,15 @@ async function seedForumNodes() {
           position = excluded.position,
           updated_at = excluded.updated_at`,
       )
-      .bind(sectionId, section.slug, section.title, section.description, sectionPosition, now, now);
+      .bind(
+        sectionId,
+        section.slug,
+        section.title,
+        section.description,
+        sectionPosition,
+        now,
+        now,
+      );
 
     const forumStatements = section.forums.map((forum, forumPosition) =>
       database
@@ -209,12 +219,145 @@ async function seedForumNodes() {
   await database.batch(statements);
 }
 
+function stableContentId(value: string) {
+  let hash = 2_166_136_261;
+  for (const character of value) {
+    hash ^= character.codePointAt(0) || 0;
+    hash = Math.imul(hash, 16_777_619);
+  }
+  return (hash >>> 0).toString(16).padStart(8, '0');
+}
+
+function seededRole(label: string) {
+  if (label === 'Эксперт' || label === 'Куратор') return 'expert';
+  if (label === 'Автор') return 'author';
+  if (label === 'Редакция') return 'moderator';
+  return 'member';
+}
+
+async function batchInChunks(
+  database: D1Database,
+  statements: D1PreparedStatement[],
+) {
+  for (let index = 0; index < statements.length; index += 50) {
+    await database.batch(statements.slice(index, index + 50));
+  }
+}
+
+async function seedCuratedTopics() {
+  const database = getDatabase();
+  const now = Math.floor(Date.now() / 1000);
+  const entries = forumSections.flatMap((section) =>
+    section.forums.flatMap((forum) =>
+      getForumTopics(forum).map((topic) => ({
+        section,
+        forum,
+        topic,
+        detail: findTopic(topic.slug),
+      })),
+    ),
+  );
+  const seeded = await database
+    .prepare(
+      "SELECT COUNT(*) AS count FROM topics WHERE id LIKE 'sample-topic:%'",
+    )
+    .first<{ count: number }>();
+  if ((seeded?.count || 0) >= entries.length) return;
+
+  const authors = new Map<string, string>();
+  for (const entry of entries) {
+    for (const post of entry.detail?.posts || []) {
+      if (!authors.has(post.author)) authors.set(post.author, post.authorRole);
+    }
+  }
+
+  const authorStatements = [...authors.entries()].map(
+    ([author, authorRole]) => {
+      const contentId = stableContentId(author);
+      return database
+        .prepare(
+          `INSERT OR IGNORE INTO users (
+          id, email, username, password_hash, role, email_verified_at, created_at, updated_at
+        ) VALUES (?, ?, ?, 'disabled', ?, ?, ?, ?)`,
+        )
+        .bind(
+          `content-user:${contentId}`,
+          `content-${contentId}@osnova.local`,
+          author,
+          seededRole(authorRole),
+          now,
+          now,
+          now,
+        );
+    },
+  );
+
+  const contentStatements = entries.flatMap((entry, topicIndex) => {
+    const detail = entry.detail;
+    if (!detail) return [];
+    const topicId = `sample-topic:${entry.topic.slug}`;
+    const createdAt = now - topicIndex * 60;
+    const topicStatement = database
+      .prepare(
+        `INSERT OR IGNORE INTO topics (
+          id, forum_id, author_id, slug, title, excerpt, status, access_level,
+          is_pinned, is_locked, is_commercial, commercial_disclosure,
+          view_count, reply_count, last_post_at, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, ?, 'published', ?, ?, 0, ?, ?, ?, ?, ?, ?, ?)`,
+      )
+      .bind(
+        topicId,
+        `forum:${entry.forum.slug}`,
+        `content-user:${stableContentId(detail.posts[0]?.author || entry.topic.author)}`,
+        entry.topic.slug,
+        entry.topic.title,
+        entry.topic.excerpt,
+        entry.topic.access,
+        entry.topic.pinned ? 1 : 0,
+        entry.topic.commercial ? 1 : 0,
+        entry.topic.commercial
+          ? 'Материал содержит партнёрский контекст. Условия вознаграждения и риски раскрыты в публикации.'
+          : null,
+        entry.topic.views,
+        Math.max(0, detail.posts.length - 1),
+        createdAt + detail.posts.length,
+        createdAt,
+        createdAt + detail.posts.length,
+      );
+
+    const postStatements = detail.posts.map((post, postIndex) =>
+      database
+        .prepare(
+          `INSERT OR IGNORE INTO posts (
+            id, topic_id, author_id, body, status, is_first_post, created_at, updated_at
+          ) VALUES (?, ?, ?, ?, 'published', ?, ?, ?)`,
+        )
+        .bind(
+          `sample-post:${entry.topic.slug}:${post.id}`,
+          topicId,
+          `content-user:${stableContentId(post.author)}`,
+          post.body.join('\n\n'),
+          postIndex === 0 ? 1 : 0,
+          createdAt + postIndex,
+          createdAt + postIndex,
+        ),
+    );
+
+    return [topicStatement, ...postStatements];
+  });
+
+  await batchInChunks(database, [...authorStatements, ...contentStatements]);
+}
+
 export function ensureCommunitySchema() {
   communitySchemaReady ??= (async () => {
     await ensureAuthSchema();
     const database = getDatabase();
-    await database.batch(communitySchemaStatements.map((statement) => database.prepare(statement)));
+    await database.batch(
+      communitySchemaStatements.map((statement) => database.prepare(statement)),
+    );
     await seedForumNodes();
+    await seedCuratedTopics();
     await database.prepare('PRAGMA optimize').run();
   })();
   return communitySchemaReady;

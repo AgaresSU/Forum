@@ -18,7 +18,7 @@ export default async function GroupsPage() {
 
   return (
     <div className="min-h-screen bg-background text-foreground">
-      <CommunityHeader username={user.username} active="groups" />
+      <CommunityHeader username={user.username} role={user.role} active="groups" />
       <main className="mx-auto max-w-[1280px] px-4 py-7 sm:px-6 lg:px-8">
         <header className="grid gap-6 border-b border-border pb-7 lg:grid-cols-[minmax(0,1fr)_340px] lg:items-end">
           <div>

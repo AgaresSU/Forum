@@ -10,7 +10,7 @@
     "build": "vinext build",
     "start": "wrangler dev --config dist/server/wrangler.json",
     "test:auth": "node scripts/smoke-auth.mjs",
-    "lint": "oxlint app components/community-header.tsx components/forum-home.tsx lib db scripts drizzle.config.ts vite.config.ts",
+    "lint": "oxlint app components/community-header.tsx components/forum-home.tsx components/moderation-queue.tsx components/forum lib db scripts drizzle.config.ts vite.config.ts",
     "format": "oxfmt"
   },
   "dependencies": {
