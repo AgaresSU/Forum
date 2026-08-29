@@ -166,6 +166,17 @@ const communitySchemaStatements = [
   'CREATE UNIQUE INDEX IF NOT EXISTS idx_partner_programs_slug ON partner_programs(slug)',
   'CREATE INDEX IF NOT EXISTS idx_partner_programs_status_updated ON partner_programs(status, updated_at)',
   'CREATE INDEX IF NOT EXISTS idx_partner_programs_submitter_created ON partner_programs(submitted_by_id, created_at)',
+  `CREATE TABLE IF NOT EXISTS partner_referral_clicks (
+    id TEXT PRIMARY KEY,
+    program_id TEXT NOT NULL REFERENCES partner_programs(id) ON DELETE CASCADE,
+    user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+    day_bucket INTEGER NOT NULL,
+    source TEXT NOT NULL DEFAULT 'catalog',
+    created_at INTEGER NOT NULL
+  )`,
+  'CREATE UNIQUE INDEX IF NOT EXISTS idx_partner_clicks_program_user_day ON partner_referral_clicks(program_id, user_id, day_bucket)',
+  'CREATE INDEX IF NOT EXISTS idx_partner_clicks_program_created ON partner_referral_clicks(program_id, created_at)',
+  'CREATE INDEX IF NOT EXISTS idx_partner_clicks_user_created ON partner_referral_clicks(user_id, created_at)',
   `CREATE TABLE IF NOT EXISTS community_groups (
     id TEXT PRIMARY KEY,
     owner_id TEXT NOT NULL REFERENCES users(id) ON DELETE RESTRICT,

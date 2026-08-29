@@ -32,6 +32,8 @@ type PartnerProgramRow = {
   reviewed_at: number | null;
   created_at: number;
   updated_at: number;
+  clicks_30d: number;
+  participants_30d: number;
 };
 
 function formatDate(timestamp: number) {
@@ -64,6 +66,8 @@ function mapProgram(row: PartnerProgramRow) {
     reviewedAt: row.reviewed_at ? formatDate(row.reviewed_at) : null,
     created: formatDate(row.created_at),
     updated: formatDate(row.updated_at),
+    clicks30d: row.clicks_30d,
+    participants30d: row.participants_30d,
   };
 }
 
@@ -135,7 +139,16 @@ export async function listPartnerPrograms(
     .prepare(
       `SELECT partner_programs.*,
               submitter.username AS submitted_by,
-              reviewer.username AS reviewed_by
+              reviewer.username AS reviewed_by,
+              (SELECT COUNT(*) FROM partner_referral_clicks
+               WHERE partner_referral_clicks.program_id = partner_programs.id
+                 AND partner_referral_clicks.created_at >= CAST(strftime('%s', 'now') AS INTEGER) - 2592000)
+                AS clicks_30d,
+              (SELECT COUNT(DISTINCT partner_referral_clicks.user_id)
+               FROM partner_referral_clicks
+               WHERE partner_referral_clicks.program_id = partner_programs.id
+                 AND partner_referral_clicks.created_at >= CAST(strftime('%s', 'now') AS INTEGER) - 2592000)
+                AS participants_30d
        FROM partner_programs
        JOIN users AS submitter ON submitter.id = partner_programs.submitted_by_id
        LEFT JOIN users AS reviewer ON reviewer.id = partner_programs.reviewed_by_id
@@ -157,17 +170,30 @@ export async function listPartnerPrograms(
     .prepare(
       `SELECT
          COUNT(*) AS total,
-         COUNT(DISTINCT category) AS categories
+         COUNT(DISTINCT category) AS categories,
+         (SELECT COUNT(*) FROM partner_referral_clicks
+          WHERE created_at >= CAST(strftime('%s', 'now') AS INTEGER) - 2592000)
+           AS clicks,
+         (SELECT COUNT(DISTINCT user_id) FROM partner_referral_clicks
+          WHERE created_at >= CAST(strftime('%s', 'now') AS INTEGER) - 2592000)
+           AS participants
        FROM partner_programs
        WHERE status = 'published'`,
     )
-    .first<{ total: number; categories: number }>();
+    .first<{
+      total: number;
+      categories: number;
+      clicks: number;
+      participants: number;
+    }>();
 
   return {
     programs: rows.results.map(mapProgram),
     stats: {
       published: stats?.total || 0,
       categories: stats?.categories || 0,
+      clicks30d: stats?.clicks || 0,
+      participants30d: stats?.participants || 0,
     },
   };
 }
@@ -272,4 +298,47 @@ export async function reviewPartnerProgram(
     payload: { previousStatus: existing.status, status, note: note || null },
   });
   return { ok: true as const, status };
+}
+
+export async function recordPartnerReferralClick(
+  viewer: CommunityViewer,
+  slug: string,
+) {
+  await ensureCommunitySchema();
+  const database = getDatabase();
+  const program = await database
+    .prepare(
+      `SELECT id, referral_url
+       FROM partner_programs
+       WHERE slug = ? AND status = 'published'`,
+    )
+    .bind(slug)
+    .first<{ id: string; referral_url: string }>();
+  if (!program) return { ok: false as const, code: 'NOT_FOUND' as const };
+  let url: URL;
+  try {
+    url = new URL(program.referral_url);
+  } catch {
+    return { ok: false as const, code: 'INVALID_URL' as const };
+  }
+  if (url.protocol !== 'https:') {
+    return { ok: false as const, code: 'INVALID_URL' as const };
+  }
+
+  const now = Math.floor(Date.now() / 1000);
+  await database
+    .prepare(
+      `INSERT OR IGNORE INTO partner_referral_clicks (
+         id, program_id, user_id, day_bucket, source, created_at
+       ) VALUES (?, ?, ?, ?, 'catalog', ?)`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      program.id,
+      viewer.id,
+      Math.floor(now / 86400),
+      now,
+    )
+    .run();
+  return { ok: true as const, url: url.toString() };
 }

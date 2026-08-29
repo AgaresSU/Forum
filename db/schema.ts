@@ -408,6 +408,34 @@ export const partnerPrograms = sqliteTable(
   ],
 );
 
+export const partnerReferralClicks = sqliteTable(
+  'partner_referral_clicks',
+  {
+    id: text('id').primaryKey(),
+    programId: text('program_id')
+      .notNull()
+      .references(() => partnerPrograms.id, { onDelete: 'cascade' }),
+    userId: text('user_id')
+      .notNull()
+      .references(() => users.id, { onDelete: 'cascade' }),
+    dayBucket: integer('day_bucket').notNull(),
+    source: text('source').notNull().default('catalog'),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    uniqueIndex('idx_partner_clicks_program_user_day').on(
+      table.programId,
+      table.userId,
+      table.dayBucket,
+    ),
+    index('idx_partner_clicks_program_created').on(
+      table.programId,
+      table.createdAt,
+    ),
+    index('idx_partner_clicks_user_created').on(table.userId, table.createdAt),
+  ],
+);
+
 export const communityGroups = sqliteTable(
   'community_groups',
   {

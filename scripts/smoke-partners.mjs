@@ -36,6 +36,7 @@ function executeSql(command) {
   if (result.status !== 0) {
     throw new Error(result.error?.message || result.stderr || result.stdout);
   }
+  return result.stdout;
 }
 
 async function api(session, path, body, method = 'POST', expected = 200) {
@@ -180,6 +181,38 @@ try {
     'PATCH',
   );
 
+  const anonymousClick = await fetch(
+    `${baseUrl}/go/partners/${encodeURIComponent(created.slug)}`,
+    { redirect: 'manual' },
+  );
+  if (
+    ![302, 307, 308].includes(anonymousClick.status) ||
+    !(anonymousClick.headers.get('location') || '').includes('/auth?mode=login')
+  ) {
+    throw new Error('Anonymous referral transition is not protected');
+  }
+  for (let index = 0; index < 2; index += 1) {
+    const transition = await fetch(
+      `${baseUrl}/go/partners/${encodeURIComponent(created.slug)}`,
+      {
+        redirect: 'manual',
+        headers: { cookie: memberSession.cookie },
+      },
+    );
+    if (
+      transition.status !== 302 ||
+      transition.headers.get('location') !== validProgram.referralUrl
+    ) {
+      throw new Error('Published referral redirect is invalid');
+    }
+  }
+  const clickCheck = executeSql(
+    `SELECT COUNT(*) AS click_count FROM partner_referral_clicks WHERE program_id = '${programId}'`,
+  );
+  if (!clickCheck.includes('"click_count": 1')) {
+    throw new Error(`Daily referral deduplication failed: ${clickCheck}`);
+  }
+
   const publishedPage = await page(
     memberSession,
     '/partners?q=Smoke&category=devtools',
@@ -187,19 +220,21 @@ try {
   if (
     !publishedPage.body.includes(programName) ||
     !publishedPage.body.includes('Реклама · раскрытие выгоды') ||
-    !publishedPage.body.includes('Реферальный переход')
+    !publishedPage.body.includes('Реферальный переход') ||
+    !publishedPage.body.includes('скрытые идентификаторы не сохраняются') ||
+    !publishedPage.body.includes('За 30 дней:')
   ) {
     throw new Error('Published program is missing required disclosure markers');
   }
 
   process.stdout.write(
-    `${JSON.stringify({ guestClosed: true, roleSubmission: true, disclosureRequired: true, premoderation: true, adminReview: true, referralMarked: true })}\n`,
+    `${JSON.stringify({ guestClosed: true, roleSubmission: true, disclosureRequired: true, premoderation: true, adminReview: true, referralMarked: true, explicitAnalytics: true, dailyDeduplication: true, dataMinimization: true })}\n`,
   );
 } finally {
   if (registered) {
     const programFilter = programId ? `entity_id = '${programId}'` : '1 = 0';
     executeSql(
-      `DELETE FROM community_events WHERE entity_type = 'partner_program' AND ${programFilter}; DELETE FROM partner_programs WHERE id = '${programId}'; DELETE FROM auth_rate_limits WHERE key LIKE 'partner-program:%' OR key LIKE 'partner-review:%'; DELETE FROM users WHERE email IN ('${memberEmail}', '${partnerEmail}', '${adminEmail}');`,
+      `DELETE FROM partner_referral_clicks WHERE program_id = '${programId}'; DELETE FROM community_events WHERE entity_type = 'partner_program' AND ${programFilter}; DELETE FROM partner_programs WHERE id = '${programId}'; DELETE FROM auth_rate_limits WHERE key LIKE 'partner-program:%' OR key LIKE 'partner-review:%'; DELETE FROM users WHERE email IN ('${memberEmail}', '${partnerEmail}', '${adminEmail}');`,
     );
   }
 }

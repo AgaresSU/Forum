@@ -87,6 +87,20 @@ export default async function PartnersPage({
               </strong>
               <span className="text-xs text-muted-foreground">категорий</span>
             </article>
+            <article className="rounded-2xl border border-border bg-card p-4">
+              <ArrowUpRight className="size-4 text-amber-ink" />
+              <strong className="mt-3 block font-heading text-2xl">
+                {data.stats.clicks30d}
+              </strong>
+              <span className="text-xs text-muted-foreground">переходов · 30 дней</span>
+            </article>
+            <article className="rounded-2xl border border-border bg-card p-4">
+              <CircleDollarSign className="size-4 text-emerald-ink" />
+              <strong className="mt-3 block font-heading text-2xl">
+                {data.stats.participants30d}
+              </strong>
+              <span className="text-xs text-muted-foreground">участников · 30 дней</span>
+            </article>
           </div>
         </header>
 
@@ -98,7 +112,11 @@ export default async function PartnersPage({
               <p className="mt-1 text-sm leading-6 opacity-80">
                 Каждая кнопка перехода помечена как реферальная. Перед ней
                 указано, кто и при каком событии получает вознаграждение.
-                Публикация без этого раскрытия технически невозможна.
+                Публикация без этого раскрытия технически невозможна. Для
+                аналитики учитывается один переход пользователя на программу в
+                сутки. Хранится только ID текущего аккаунта для дедупликации;
+                IP, user-agent и скрытые идентификаторы не сохраняются, а при
+                удалении аккаунта его переходы удаляются вместе с ним.
               </p>
             </div>
           </div>
@@ -207,18 +225,24 @@ export default async function PartnersPage({
               )}
 
               <div className="mt-auto flex flex-wrap items-center justify-between gap-3 pt-5">
-                <p className="text-[11px] text-muted-foreground">
-                  Добавил {program.submittedBy} · обновлено {program.updated}
-                </p>
+                <div>
+                  <p className="text-[11px] text-muted-foreground">
+                    Добавил {program.submittedBy} · обновлено {program.updated}
+                  </p>
+                  <p className="mt-1 text-[11px] font-semibold text-muted-foreground">
+                    За 30 дней: {program.clicks30d} переходов · {program.participants30d} участников
+                  </p>
+                </div>
                 {program.status === 'published' && (
-                  <Link
-                    href={program.referralUrl}
+                  <a
+                    href={`/go/partners/${encodeURIComponent(program.slug)}`}
                     target="_blank"
                     rel="nofollow sponsored noopener noreferrer"
                     className={buttonVariants({ size: 'sm' })}
+                    aria-label={`Реферальный переход в программу ${program.name}; один переход в сутки будет учтён в агрегированной аналитике`}
                   >
                     Реферальный переход <ArrowUpRight data-icon="inline-end" />
-                  </Link>
+                  </a>
                 )}
               </div>
 
