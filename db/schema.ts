@@ -307,6 +307,43 @@ export const reactions = sqliteTable(
   ],
 );
 
+export const reputationEvents = sqliteTable(
+  'reputation_events',
+  {
+    id: text('id').primaryKey(),
+    actorUserId: text('actor_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    recipientUserId: text('recipient_user_id').references(() => users.id, {
+      onDelete: 'set null',
+    }),
+    actorUsername: text('actor_username').notNull(),
+    recipientUsername: text('recipient_username').notNull(),
+    targetType: text('target_type').notNull(),
+    targetId: text('target_id').notNull(),
+    action: text('action').notNull(),
+    previousReactionType: text('previous_reaction_type'),
+    reactionType: text('reaction_type'),
+    scoreDelta: integer('score_delta').notNull(),
+    createdAt: integer('created_at').notNull(),
+  },
+  (table) => [
+    index('idx_reputation_events_actor_created').on(
+      table.actorUserId,
+      table.createdAt,
+    ),
+    index('idx_reputation_events_recipient_created').on(
+      table.recipientUserId,
+      table.createdAt,
+    ),
+    index('idx_reputation_events_target_created').on(
+      table.targetType,
+      table.targetId,
+      table.createdAt,
+    ),
+  ],
+);
+
 export const userAdministrationAudit = sqliteTable(
   'user_administration_audit',
   {

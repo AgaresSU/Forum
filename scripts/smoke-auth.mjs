@@ -16,6 +16,7 @@ const protectedPages = [
   '/library/affiliate-program-due-diligence',
   '/search',
   '/admin/users',
+  '/admin/reputation',
   '/groups',
   '/editor',
   '/editor/new',

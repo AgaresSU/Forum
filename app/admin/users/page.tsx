@@ -5,6 +5,7 @@ import {
   UserManagement,
   type ManagedUser,
 } from '@/components/admin/user-management';
+import { AdminNavigation } from '@/components/admin/admin-navigation';
 import { CommunityHeader } from '@/components/community-header';
 import { buttonVariants } from '@/components/ui/button';
 import { requireCommunityUser } from '@/lib/forum/require-community-user';
@@ -62,6 +63,7 @@ export default async function AdminUsersPage() {
             Назначение авторов, экспертов, PRO, модераторов и администраторов.
             Себя и последнего администратора изменить или удалить нельзя.
           </p>
+          <AdminNavigation active="users" />
         </header>
 
         <div className="mt-6">

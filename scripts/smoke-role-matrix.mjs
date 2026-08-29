@@ -156,6 +156,11 @@ try {
       '/admin/users',
       role === 'admin' ? 'Пользователи и роли' : 'Раздел администратора',
     );
+    await page(
+      session,
+      '/admin/reputation',
+      role === 'admin' ? 'Append-only журнал' : 'Аудит репутации',
+    );
 
     await post(
       session,
@@ -251,8 +256,13 @@ try {
 } finally {
   if (registered) {
     const emails = accounts.map((account) => `'${account.email}'`).join(', ');
+    const usernames = accounts
+      .map((account) => `'${account.username}'`)
+      .join(', ');
     executeSql(
-      `DELETE FROM reactions WHERE user_id IN (SELECT id FROM users WHERE email IN (${emails}));
+      `DELETE FROM reputation_events WHERE actor_user_id IN (SELECT id FROM users WHERE email IN (${emails}))
+          OR actor_username IN (${usernames});
+       DELETE FROM reactions WHERE user_id IN (SELECT id FROM users WHERE email IN (${emails}));
        DELETE FROM community_events WHERE actor_user_id IN (SELECT id FROM users WHERE email IN (${emails}));
        DELETE FROM security_events WHERE user_id IN (SELECT id FROM users WHERE email IN (${emails}));
        DELETE FROM content_records WHERE author_id IN (SELECT id FROM users WHERE email IN (${emails}));

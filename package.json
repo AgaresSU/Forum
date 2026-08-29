@@ -14,6 +14,7 @@
     "test:admin": "node scripts/smoke-admin.mjs",
     "test:roles": "node scripts/smoke-role-matrix.mjs",
     "test:partners": "node scripts/smoke-partners.mjs",
+    "test:reputation": "node scripts/smoke-reputation-audit.mjs",
     "lint": "oxlint app components/community-header.tsx components/forum-home.tsx components/moderation-queue.tsx components/notification-center.tsx components/forum lib db scripts drizzle.config.ts vite.config.ts",
     "format": "oxfmt"
   },

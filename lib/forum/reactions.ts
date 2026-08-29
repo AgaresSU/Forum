@@ -24,6 +24,7 @@ type ReactionTarget = {
 
 type ResolvedTarget = {
   authorId: string;
+  authorUsername: string;
   accessLevel: string;
   status: string;
   firstPost?: boolean;
@@ -69,8 +70,13 @@ async function resolveTarget(
   if (targetType === 'topic') {
     return database
       .prepare(
-        `SELECT author_id AS authorId, access_level AS accessLevel, status
-         FROM topics WHERE id = ?`,
+        `SELECT topics.author_id AS authorId,
+                users.username AS authorUsername,
+                topics.access_level AS accessLevel,
+                topics.status
+         FROM topics
+         JOIN users ON users.id = topics.author_id
+         WHERE topics.id = ?`,
       )
       .bind(targetId)
       .first<ResolvedTarget>();
@@ -79,6 +85,7 @@ async function resolveTarget(
     return database
       .prepare(
         `SELECT posts.author_id AS authorId,
+                users.username AS authorUsername,
                 topics.access_level AS accessLevel,
                 CASE
                   WHEN posts.status = 'published' AND topics.status = 'published'
@@ -88,6 +95,7 @@ async function resolveTarget(
                 posts.is_first_post AS firstPost
          FROM posts
          JOIN topics ON topics.id = posts.topic_id
+         JOIN users ON users.id = posts.author_id
          WHERE posts.id = ?`,
       )
       .bind(targetId)
@@ -95,8 +103,13 @@ async function resolveTarget(
   }
   return database
     .prepare(
-      `SELECT author_id AS authorId, access_level AS accessLevel, status
-       FROM content_records WHERE id = ?`,
+      `SELECT content_records.author_id AS authorId,
+              users.username AS authorUsername,
+              content_records.access_level AS accessLevel,
+              content_records.status
+       FROM content_records
+       JOIN users ON users.id = content_records.author_id
+       WHERE content_records.id = ?`,
     )
     .bind(targetId)
     .first<ResolvedTarget>();
@@ -121,30 +134,44 @@ export async function setReaction(
     return { ok: false as const, code: 'OWN_TARGET' as const };
 
   const database = getDatabase();
-  const existing = await database
-    .prepare(
-      `SELECT id, reaction_type FROM reactions
-       WHERE user_id = ? AND target_type = ? AND target_id = ?`,
-    )
-    .bind(viewer.id, input.targetType, input.targetId)
-    .first<{ id: string; reaction_type: string }>();
+  const [existing, actor] = await Promise.all([
+    database
+      .prepare(
+        `SELECT id, reaction_type FROM reactions
+         WHERE user_id = ? AND target_type = ? AND target_id = ?`,
+      )
+      .bind(viewer.id, input.targetType, input.targetId)
+      .first<{ id: string; reaction_type: ReactionType }>(),
+    database
+      .prepare('SELECT username FROM users WHERE id = ?')
+      .bind(viewer.id)
+      .first<{ username: string }>(),
+  ]);
+  if (!actor) return { ok: false as const, code: 'ACCESS_DENIED' as const };
   const now = Math.floor(Date.now() / 1000);
   let selected: ReactionType | null = input.reactionType;
+  let action: 'added' | 'replaced' | 'removed' = 'added';
+  let scoreDelta = reactionWeights[input.reactionType];
+  let mutation: D1PreparedStatement;
   if (existing?.reaction_type === input.reactionType) {
-    await database
+    mutation = database
       .prepare('DELETE FROM reactions WHERE id = ? AND user_id = ?')
-      .bind(existing.id, viewer.id)
-      .run();
+      .bind(existing.id, viewer.id);
     selected = null;
+    action = 'removed';
+    scoreDelta = -reactionWeights[existing.reaction_type];
   } else if (existing) {
-    await database
+    mutation = database
       .prepare(
         'UPDATE reactions SET reaction_type = ?, created_at = ? WHERE id = ? AND user_id = ?',
       )
-      .bind(input.reactionType, now, existing.id, viewer.id)
-      .run();
+      .bind(input.reactionType, now, existing.id, viewer.id);
+    action = 'replaced';
+    scoreDelta =
+      reactionWeights[input.reactionType] -
+      reactionWeights[existing.reaction_type];
   } else {
-    await database
+    mutation = database
       .prepare(
         `INSERT INTO reactions (
           id, user_id, target_type, target_id, reaction_type, created_at
@@ -157,9 +184,31 @@ export async function setReaction(
         input.targetId,
         input.reactionType,
         now,
-      )
-      .run();
+      );
   }
+  const audit = database
+    .prepare(
+      `INSERT INTO reputation_events (
+         id, actor_user_id, recipient_user_id, actor_username,
+         recipient_username, target_type, target_id, action,
+         previous_reaction_type, reaction_type, score_delta, created_at
+       ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+    )
+    .bind(
+      crypto.randomUUID(),
+      viewer.id,
+      target.authorId,
+      actor.username,
+      target.authorUsername,
+      input.targetType,
+      input.targetId,
+      action,
+      existing?.reaction_type || null,
+      selected,
+      scoreDelta,
+      now,
+    );
+  await database.batch([mutation, audit]);
   const summary = await getReactionSummary(
     viewer.id,
     input.targetType,
