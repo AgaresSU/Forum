@@ -14,6 +14,7 @@ const protectedPages = [
   '/library',
   '/library/quality-manual-standard',
   '/library/affiliate-program-due-diligence',
+  '/search',
   '/groups',
   '/editor',
   '/editor/new',
@@ -128,6 +129,28 @@ await expectPageContent(
   'Сначала сформулируйте результат',
 );
 await expectPageContent('/library?q=Go', 'Диагностика утечки соединений в Go');
+await expectPageContent(
+  `/search?q=${encodeURIComponent('утечка соединений')}`,
+  'Утечка соединений в Go-сервисе',
+);
+await expectPageContent(
+  `/search?q=${encodeURIComponent('Модульный монолит')}&type=journal`,
+  'Почему модульный монолит снова стал практичным выбором',
+);
+await expectPageContent(
+  `/search?q=${encodeURIComponent('Сначала сформулируйте результат')}&type=library`,
+  'Стандарт качественного мануала',
+);
+await expectPageContent(
+  `/search?q=${encodeURIComponent('полный каталог')}`,
+  'Ничего не найдено',
+  'Наблюдаемость без отдельной platform-команды',
+);
+await expectPageContent(
+  `/search?q=${encodeURIComponent('Наблюдаемость')}`,
+  'полный текст закрыт',
+  'Небольшой команде не нужен полный каталог',
+);
 
 const topic = await request('/api/forum/topics', {
   forumSlug: 'development',
@@ -376,5 +399,7 @@ process.stdout.write(
     reactionAntiSpam: true,
     contributionReputation: true,
     librarySearch: true,
+    unifiedSearch: true,
+    searchProGuard: true,
   })}\n`,
 );

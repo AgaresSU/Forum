@@ -31,7 +31,7 @@ export async function CommunityHeader({
   username: string;
   userId?: string;
   role?: string;
-  active: (typeof navigation)[number]['key'];
+  active: (typeof navigation)[number]['key'] | 'search';
 }) {
   const unreadCount = userId ? await getUnreadNotificationCount(userId) : 0;
   const visibleNavigation = navigation.filter((item) => {
@@ -87,11 +87,29 @@ export async function CommunityHeader({
           ))}
         </nav>
 
-        <Link
-          href="/forum"
-          className="ml-auto hidden h-9 w-full max-w-[300px] items-center gap-2 rounded-xl border border-border bg-muted/55 px-3 text-sm text-muted-foreground transition hover:border-primary/30 hover:bg-card md:flex"
+        <form
+          action="/search"
+          className="relative ml-auto hidden w-full max-w-[300px] md:block"
         >
-          <Search className="size-4" /> Поиск по сообществу
+          <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+          <label htmlFor="community-search" className="sr-only">
+            Поиск по сообществу
+          </label>
+          <input
+            id="community-search"
+            name="q"
+            minLength={2}
+            maxLength={100}
+            placeholder="Поиск по сообществу"
+            className="h-9 w-full rounded-xl border border-border bg-muted/55 pl-9 pr-3 text-sm outline-none transition focus:border-primary/30 focus:bg-card"
+          />
+        </form>
+        <Link
+          href="/search"
+          className="grid size-9 place-items-center rounded-lg text-muted-foreground transition hover:bg-muted hover:text-foreground md:hidden"
+          aria-label="Поиск по сообществу"
+        >
+          <Search className="size-4" />
         </Link>
         <Link
           href="/notifications"

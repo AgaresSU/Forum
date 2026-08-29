@@ -283,16 +283,30 @@ export function ForumHome({
             )}
           </nav>
 
-          <label className="relative ml-auto hidden w-full max-w-[350px] md:block">
+          <form
+            className="relative ml-auto hidden w-full max-w-[350px] md:block"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (query.trim().length >= 2)
+                window.location.assign(
+                  `/search?q=${encodeURIComponent(query.trim())}`,
+                );
+            }}
+          >
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <span className="sr-only">Поиск по разделам</span>
+            <label htmlFor="forum-search" className="sr-only">
+              Поиск по сообществу
+            </label>
             <input
+              id="forum-search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Поиск по разделам"
+              minLength={2}
+              maxLength={100}
+              placeholder="Поиск — Enter по всему сайту"
               className="h-9 w-full rounded-xl border border-border bg-muted/55 pl-9 pr-3 text-sm outline-none transition focus:border-primary/40 focus:bg-card focus:ring-4 focus:ring-primary/10"
             />
-          </label>
+          </form>
 
           <Link
             href="/notifications"
@@ -383,16 +397,30 @@ export function ForumHome({
             </div>
           </div>
 
-          <label className="relative mb-4 block md:hidden">
+          <form
+            className="relative mb-4 block md:hidden"
+            onSubmit={(event) => {
+              event.preventDefault();
+              if (query.trim().length >= 2)
+                window.location.assign(
+                  `/search?q=${encodeURIComponent(query.trim())}`,
+                );
+            }}
+          >
             <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <span className="sr-only">Поиск по разделам</span>
+            <label htmlFor="forum-mobile-search" className="sr-only">
+              Поиск по сообществу
+            </label>
             <input
+              id="forum-mobile-search"
               value={query}
               onChange={(event) => setQuery(event.target.value)}
-              placeholder="Найти раздел или тему"
+              minLength={2}
+              maxLength={100}
+              placeholder="Найти раздел; Enter — искать везде"
               className="h-11 w-full rounded-xl border border-border bg-card pl-10 pr-4 text-sm outline-none focus:ring-4 focus:ring-primary/10"
             />
-          </label>
+          </form>
 
           {view === 'index' ? (
             <div className="space-y-4">
