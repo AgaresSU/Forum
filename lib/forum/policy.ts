@@ -1,0 +1,83 @@
+import { z } from 'zod';
+
+export const communityEventTypes = [
+  'user.registered',
+  'user.role_changed',
+  'topic.created',
+  'topic.published',
+  'topic.reported',
+  'post.created',
+  'content.published',
+  'group.membership_changed',
+  'subscription.changed',
+] as const;
+
+export type CommunityEventType = (typeof communityEventTypes)[number];
+
+export const prohibitedContentCategories = [
+  {
+    key: 'fraud',
+    title: 'Мошенничество и обман',
+    description: 'Фишинг, скам, социальная инженерия и схемы с заведомым ущербом для третьих лиц.',
+  },
+  {
+    key: 'stolen-access',
+    title: 'Чужие аккаунты и данные',
+    description: 'Продажа, покупка, подбор или распространение чужих доступов и персональных данных.',
+  },
+  {
+    key: 'malware',
+    title: 'Вредоносное ПО',
+    description: 'Разработка, распространение и эксплуатация ПО для несанкционированного доступа или ущерба.',
+  },
+  {
+    key: 'evasion',
+    title: 'Обход закона и ограничений',
+    description: 'Инструкции, направленные на нарушение закона, правил платёжных систем или рекламных площадок.',
+  },
+] as const;
+
+export const commercialDisclosureSchema = z
+  .string()
+  .trim()
+  .min(20, 'Опишите выгоду автора и характер партнёрской связи.')
+  .max(500, 'Раскрытие партнёрства должно быть короче 500 символов.');
+
+export const topicDraftSchema = z
+  .object({
+    forumSlug: z.string().trim().min(1).max(80),
+    title: z.string().trim().min(8).max(140),
+    body: z.string().trim().min(40).max(50_000),
+    isCommercial: z.boolean().default(false),
+    commercialDisclosure: z.string().trim().max(500).optional(),
+  })
+  .superRefine((topic, context) => {
+    if (!topic.isCommercial) return;
+
+    const result = commercialDisclosureSchema.safeParse(topic.commercialDisclosure);
+    if (!result.success) {
+      context.addIssue({
+        code: 'custom',
+        path: ['commercialDisclosure'],
+        message: result.error.issues[0]?.message || 'Раскройте коммерческую связь.',
+      });
+    }
+  });
+
+export const moderationReportSchema = z.object({
+  targetType: z.enum(['topic', 'post', 'content', 'group']),
+  targetId: z.string().trim().min(1).max(100),
+  reason: z.enum(['illegal', 'fraud', 'spam', 'harassment', 'personal_data', 'other']),
+  details: z.string().trim().min(10).max(2_000),
+});
+
+export const publicationPolicy = {
+  commercialDisclosureRequired: true,
+  premoderatedForumSections: ['income', 'promotion'],
+  editorialPrinciples: [
+    'Проверяемость фактов и конкретные источники.',
+    'Законность способа заработка и рекламного механизма.',
+    'Явная маркировка партнёрских ссылок, рекламы и выгоды автора.',
+    'Запрет обещаний гарантированного дохода и манипулятивных заголовков.',
+  ],
+} as const;
